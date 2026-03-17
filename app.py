@@ -3,124 +3,62 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 import json
 import os
 import numpy as np
 import base64
 import re
-from datetime import datetime, timedelta
+import uuid
 
-# ═══════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────
 # PAGE CONFIG
-# ═══════════════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="Smaartbrand Intelligence Pipeline",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ─────────────────────────────────────────
+st.set_page_config(page_title="Smaartbrand Intelligence", page_icon="🏨", layout="wide")
 
-# ═══════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────
 # STYLES
-# ═══════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
 .main-header {
-    text-align: center; padding: 20px;
+    text-align: center; padding: 24px;
     background: linear-gradient(135deg, #1e3a5f 0%, #0d9488 100%);
     border-radius: 12px; margin-bottom: 20px;
 }
-.main-header h1 { color: white; margin: 0; font-size: 1.8rem; }
-.main-header p { color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 0.85rem; }
+.main-header h1 { color: white; margin: 0; font-size: 1.9rem; }
+.main-header p { color: rgba(255,255,255,0.85); margin: 8px 0 0 0; font-size: 0.9rem; }
 
-.compare-card {
-    background: linear-gradient(135deg, #0d9488 0%, #115e59 100%);
-    padding: 20px; border-radius: 12px; color: white; text-align: center;
-    margin: 8px 0;
-}
-.compare-card h3 { margin: 0 0 8px 0; font-size: 1rem; opacity: 0.9; }
-.compare-card .metric { font-size: 2.2rem; font-weight: 700; }
-.compare-card .label { font-size: 0.8rem; opacity: 0.8; }
-
-.insight-card {
-    background: #f8fafc; border-left: 4px solid #0d9488;
-    padding: 16px; margin: 12px 0; border-radius: 0 8px 8px 0;
-}
-.insight-title { font-weight: 600; color: #1e3a5f; margin-bottom: 8px; }
-
-.winner-badge {
-    background: #10b981; color: white; padding: 2px 10px;
-    border-radius: 12px; font-size: 11px; font-weight: 600;
-}
-.loser-badge {
-    background: #ef4444; color: white; padding: 2px 10px;
-    border-radius: 12px; font-size: 11px; font-weight: 600;
+.section-header {
+    font-size: 1.05rem; font-weight: 600; color: #1a1a2e;
+    margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb;
 }
 
-.article-preview {
-    background: white; border: 1px solid #e5e7eb;
-    border-radius: 12px; padding: 24px; margin: 16px 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    white-space: pre-wrap; line-height: 1.6;
+.hotel-name-cell {
+    font-size: 0.7rem; font-weight: 600; color: #1e293b;
+    word-wrap: break-word; max-width: 100px; line-height: 1.25; text-align: center;
 }
 
-.linkedin-badge {
-    background: #0077b5; color: white;
-    padding: 4px 12px; border-radius: 20px;
-    font-size: 12px; font-weight: 500;
+.phrase-card {
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
 }
+.phrase-card .phrase-text { font-size: 0.8rem; font-weight: 500; color: #1e293b; }
+.phrase-card .phrase-count { font-size: 0.7rem; color: #64748b; float: right; margin-top: -16px; }
 
-.vs-text {
-    font-size: 1.5rem; font-weight: 700; color: #f59e0b;
-    text-align: center; padding: 10px;
-}
+.dot-strong { width: 10px; height: 10px; border-radius: 50%; background: #1e3a5f; display: inline-block; }
+.dot-weak { width: 10px; height: 10px; border-radius: 50%; background: #93c5fd; display: inline-block; }
+.dot-none { width: 10px; height: 10px; border-radius: 50%; background: #e5e7eb; display: inline-block; }
+
+.score-cell { padding: 6px 8px; border-radius: 5px; text-align: center; font-weight: 600; font-size: 0.8rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════
-# CONSTANTS
-# ═══════════════════════════════════════════════════════════════
-PROJECT = "gen-lang-client-0143536012"
-DATASET = "analyst"
-
-ASPECT_MAP = {
-    1: "Dining", 2: "Cleanliness", 3: "Amenities", 4: "Staff",
-    5: "Room", 6: "Location", 7: "Value for Money", 8: "General"
-}
-ASPECT_ICONS = {
-    "Dining": "🍽️", "Cleanliness": "🧹", "Amenities": "🏊", "Staff": "👨‍💼",
-    "Room": "🛏️", "Location": "📍", "Value for Money": "💰", "General": "⭐"
-}
-
-TEAL_PALETTE = ["#f0fdfa", "#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e", "#115e59"]
-POSITIVE_COLOR = "#10b981"
-NEGATIVE_COLOR = "#ef4444"
-
-# Pre-written hook lines for different comparison types
-HOOK_LIBRARY = {
-    "brand_dining": "🍽️ {brand1} vs {brand2}: Who serves breakfast better? We analyzed {total:,} reviews to find out.",
-    "brand_staff": "👨‍💼 Guests forgive bad WiFi. They never forgive rude staff. Here's how {brand1} and {brand2} compare.",
-    "brand_value": "💰 {brand1} charges premium prices. But do guests feel they get premium service? The data surprises.",
-    "brand_overall": "🏆 {brand1} vs {brand2}: The ultimate showdown. {total:,} guest reviews reveal a clear winner.",
-    "city_business": "💼 {city1} vs {city2}: Where do Business travelers complain more? The answer might surprise you.",
-    "city_leisure": "🏖️ Leisure travelers love {city1}. But {city2} is catching up fast. Here's the data.",
-    "city_overall": "🌆 {city1} vs {city2}: Which city's hotels deliver better experiences? We analyzed {total:,} reviews.",
-    "star_value": "⭐ 5-star price, 3-star experience? We compared {total:,} reviews across star categories.",
-    "star_service": "🛎️ Do more stars mean better service? Not always. Here's what the data shows.",
-    "star_overall": "⭐ 3-star vs 4-star vs 5-star: Which gives the best bang for your buck?",
-    "persona_business": "💼 Business travelers have ONE non-negotiable. Most hotels get it wrong.",
-    "persona_couple": "💑 What couples want vs what families want: The gap is wider than you think.",
-    "aspect_gap": "📊 The #1 aspect where {leader} beats {laggard}? It's not what you'd expect.",
-    "competitive": "⚔️ Your competitor's weakness is hiding in plain sight. We found it in {total:,} reviews."
-}
-
-# ═══════════════════════════════════════════════════════════════
-# CREDENTIALS & CLIENT
-# ═══════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────
+# CREDENTIALS
+# ─────────────────────────────────────────
 def get_credentials():
     gcp_creds = os.environ.get("GCP_CREDENTIALS_JSON", "")
     if not gcp_creds:
@@ -145,39 +83,39 @@ def get_bq_client():
     if credentials:
         return bigquery.Client(credentials=credentials, project=credentials.project_id)
     try:
-        return bigquery.Client(project=PROJECT)
+        return bigquery.Client(project="gen-lang-client-0143536012")
     except:
         return None
 
 client = get_bq_client()
 
-# ═══════════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
-# ═══════════════════════════════════════════════════════════════
-def get_color_for_score(score: float) -> str:
-    idx = min(int(score / 100 * (len(TEAL_PALETTE) - 1)), len(TEAL_PALETTE) - 1)
-    return TEAL_PALETTE[idx]
+# ─────────────────────────────────────────
+# CONSTANTS
+# ─────────────────────────────────────────
+PROJECT = "gen-lang-client-0143536012"
+DATASET = "analyst"
+AGENT_ID = "agent_b9a402f4-9a19-40c7-849e-e1df4f3ad0b2"
+LOCATION = "global"
 
-def format_hook(hook_template: str, **kwargs) -> str:
-    """Format hook template with actual values."""
-    try:
-        return hook_template.format(**kwargs)
-    except KeyError:
-        return hook_template
+ASPECT_MAP = {1: "Dining", 2: "Cleanliness", 3: "Amenities", 4: "Staff",
+              5: "Room", 6: "Location", 7: "Value for Money", 8: "General"}
+ASPECT_ICONS = {"Dining": "🍽️", "Cleanliness": "🧹", "Amenities": "🏊", "Staff": "👨‍💼",
+                "Room": "🛏️", "Location": "📍", "Value for Money": "💰", "General": "⭐"}
+TEAL_SCALE = ["#f0fdfa", "#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e", "#115e59"]
 
-# ═══════════════════════════════════════════════════════════════
+def get_color_for_score(score):
+    idx = min(int(score / 100 * (len(TEAL_SCALE) - 1)), len(TEAL_SCALE) - 1)
+    return TEAL_SCALE[idx]
+
+# ─────────────────────────────────────────
 # DATA QUERIES
-# ═══════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def get_metadata():
     if client is None:
         return pd.DataFrame()
     query = f"""
-    SELECT DISTINCT 
-        pl.Name AS hotel_name, 
-        pd.Brand, 
-        pl.Star_Category AS star_category, 
-        pl.City
+    SELECT DISTINCT pl.Name AS hotel_name, pd.Brand, pl.Star_Category AS star_category, pl.City
     FROM `{PROJECT}.{DATASET}.product_list` pl
     JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
     WHERE pd.Brand IS NOT NULL AND pl.Name IS NOT NULL AND pl.City IS NOT NULL
@@ -188,821 +126,991 @@ def get_metadata():
         return pd.DataFrame()
 
 @st.cache_data(ttl=600)
-def fetch_comparison_data(compare_by: str, selected_items: tuple, date_from: str = None, date_to: str = None):
-    """
-    Fetch data aggregated by comparison dimension (Brand/City/Star).
-    Returns mention PERCENTAGES, excludes Unknown persona values.
-    """
-    if client is None or not selected_items:
+def fetch_data(hotel_names: tuple):
+    if client is None or not hotel_names:
         return pd.DataFrame()
-    
-    items_sql = "', '".join([str(item).replace("'", "''") for item in selected_items])
-    
-    date_filter = ""
-    if date_from and date_to:
-        date_filter = f"AND e.Review_date BETWEEN '{date_from}' AND '{date_to}'"
-    
-    # Determine grouping column
-    if compare_by == "Brand":
-        group_col = "pd.Brand"
-        where_col = "pd.Brand"
-    elif compare_by == "City":
-        group_col = "pl.City"
-        where_col = "pl.City"
-    elif compare_by == "Star Category":
-        group_col = "pl.Star_Category"
-        where_col = "pl.Star_Category"
-    else:  # Hotel
-        group_col = "pl.Name"
-        where_col = "pl.Name"
-    
+    names_sql = "', '".join([n.replace("'", "''") for n in hotel_names])
     query = f"""
-    WITH filtered_data AS (
-        SELECT 
-            {group_col} AS compare_group,
-            pl.Name AS hotel_name,
-            pd.Brand,
-            pl.Star_Category,
-            pl.City,
-            s.aspect_id,
-            s.treemap_name AS phrase,
-            s.sentiment_type,
-            e.Review_date,
-            e.inferred_gender AS gender,
-            e.traveler_type,
-            e.stay_purpose,
-            COUNT(*) AS mention_count
-        FROM `{PROJECT}.{DATASET}.product_user_review_enriched` e
-        JOIN `{PROJECT}.{DATASET}.product_user_review_sentiment` s ON e.id = s.user_review_id
-        JOIN `{PROJECT}.{DATASET}.product_list` pl ON e.product_id = pl.product_id
-        JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
-        WHERE {where_col} IN ('{items_sql}')
-        {date_filter}
-        -- Exclude Unknown persona values
-        AND LOWER(IFNULL(e.inferred_gender, 'unknown')) != 'unknown'
-        AND LOWER(IFNULL(e.traveler_type, 'unknown')) != 'unknown'
-        AND LOWER(IFNULL(e.stay_purpose, 'unknown')) != 'unknown'
-        GROUP BY {group_col}, pl.Name, pd.Brand, pl.Star_Category, pl.City,
-                 s.aspect_id, s.treemap_name, s.sentiment_type,
-                 e.Review_date, e.inferred_gender, e.traveler_type, e.stay_purpose
-    )
-    SELECT * FROM filtered_data
+    SELECT pl.Name AS hotel_name, pd.Brand, pl.Star_Category, pl.City,
+           s.aspect_id, s.treemap_name AS phrase, s.sentiment_type, 
+           e.Review_date,
+           e.inferred_gender AS gender,
+           e.traveler_type,
+           e.stay_purpose,
+           COUNT(*) AS mention_count
+    FROM `{PROJECT}.{DATASET}.product_user_review_enriched` e
+    JOIN `{PROJECT}.{DATASET}.product_user_review_sentiment` s ON e.id = s.user_review_id
+    JOIN `{PROJECT}.{DATASET}.product_list` pl ON e.product_id = pl.product_id
+    JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
+    WHERE pl.Name IN ('{names_sql}')
+    GROUP BY pl.Name, pd.Brand, pl.Star_Category, pl.City, s.aspect_id, s.treemap_name, s.sentiment_type, e.Review_date, e.inferred_gender, e.traveler_type, e.stay_purpose
     """
     try:
         df = client.query(query).to_dataframe()
         df["aspect"] = df["aspect_id"].map(ASPECT_MAP).fillna("Other")
         df["mention_count"] = pd.to_numeric(df["mention_count"], errors="coerce").fillna(0).astype(int)
-        
         if "Review_date" in df.columns:
             df["Review_date"] = pd.to_datetime(df["Review_date"], errors="coerce")
-        
         return df
-    except Exception as e:
-        st.error(f"Query error: {e}")
+    except:
         return pd.DataFrame()
 
-# ═══════════════════════════════════════════════════════════════
-# STAGE 1: QUERY AGENT (Comparison Mode)
-# ═══════════════════════════════════════════════════════════════
-def run_query_agent(compare_by: str, selected_items: list, date_from: str, date_to: str) -> dict:
-    """Stage 1: Fetch and aggregate data by comparison dimension."""
-    if not selected_items or len(selected_items) < 2:
-        return {"success": False, "error": "Select at least 2 items to compare", "data": None}
+@st.cache_data(ttl=600)
+def fetch_recent_trends(hotel_names: tuple, months: int = 3):
+    """Fetch sentiment trends for last N months"""
+    if client is None or not hotel_names:
+        return {}
     
-    df = fetch_comparison_data(compare_by, tuple(selected_items), date_from, date_to)
+    names_sql = "', '".join([n.replace("'", "''") for n in hotel_names])
     
-    if df.empty:
-        return {"success": False, "error": "No data found for selection", "data": None}
-    
-    total_mentions = df['mention_count'].sum()
-    
-    # Calculate satisfaction % per compare_group per aspect
-    satisfaction_data = []
-    for group in df['compare_group'].unique():
-        group_df = df[df['compare_group'] == group]
-        group_total = group_df['mention_count'].sum()
-        
-        for aspect in df['aspect'].unique():
-            aspect_df = group_df[group_df['aspect'] == aspect]
-            pos = aspect_df[aspect_df['sentiment_type'].str.lower() == 'positive']['mention_count'].sum()
-            neg = aspect_df[aspect_df['sentiment_type'].str.lower() == 'negative']['mention_count'].sum()
-            total = pos + neg
-            sat_pct = round(pos / total * 100, 1) if total > 0 else 0
-            mention_pct = round(total / group_total * 100, 1) if group_total > 0 else 0
-            
-            satisfaction_data.append({
-                'compare_group': str(group),
-                'aspect': aspect,
-                'satisfaction_pct': sat_pct,
-                'mention_pct': mention_pct,
-                'positive_count': pos,
-                'negative_count': neg,
-                'total_mentions': total
-            })
-    
-    satisfaction_df = pd.DataFrame(satisfaction_data)
-    
-    # Overall satisfaction per group
-    overall_satisfaction = {}
-    for group in df['compare_group'].unique():
-        group_df = df[df['compare_group'] == group]
-        pos = group_df[group_df['sentiment_type'].str.lower() == 'positive']['mention_count'].sum()
-        neg = group_df[group_df['sentiment_type'].str.lower() == 'negative']['mention_count'].sum()
-        overall_satisfaction[str(group)] = round(pos / (pos + neg) * 100, 1) if (pos + neg) > 0 else 0
-    
-    # Persona breakdown per group (percentages)
-    persona_data = {}
-    for col in ['traveler_type', 'stay_purpose', 'gender']:
-        if col in df.columns:
-            persona_data[col] = {}
-            for group in df['compare_group'].unique():
-                group_df = df[df['compare_group'] == group]
-                col_total = group_df.groupby(col)['mention_count'].sum()
-                col_pct = (col_total / col_total.sum() * 100).round(1)
-                persona_data[col][str(group)] = col_pct.to_dict()
-    
-    # Top phrases per group
-    phrases_by_group = {}
-    for group in df['compare_group'].unique():
-        group_df = df[df['compare_group'] == group]
-        pos_phrases = group_df[group_df['sentiment_type'].str.lower() == 'positive'].groupby('phrase')['mention_count'].sum().nlargest(8)
-        neg_phrases = group_df[group_df['sentiment_type'].str.lower() == 'negative'].groupby('phrase')['mention_count'].sum().nlargest(8)
-        phrases_by_group[str(group)] = {
-            'positive': pos_phrases.to_dict(),
-            'negative': neg_phrases.to_dict()
-        }
-    
-    # Find winners and gaps
-    aspect_winners = {}
-    for aspect in satisfaction_df['aspect'].unique():
-        aspect_data = satisfaction_df[satisfaction_df['aspect'] == aspect]
-        if not aspect_data.empty:
-            winner_idx = aspect_data['satisfaction_pct'].idxmax()
-            loser_idx = aspect_data['satisfaction_pct'].idxmin()
-            winner = aspect_data.loc[winner_idx]
-            loser = aspect_data.loc[loser_idx]
-            gap = winner['satisfaction_pct'] - loser['satisfaction_pct']
-            aspect_winners[aspect] = {
-                'winner': winner['compare_group'],
-                'winner_score': winner['satisfaction_pct'],
-                'loser': loser['compare_group'],
-                'loser_score': loser['satisfaction_pct'],
-                'gap': round(gap, 1)
-            }
-    
-    return {
-        "success": True,
-        "compare_by": compare_by,
-        "groups": [str(g) for g in df['compare_group'].unique()],
-        "data": df,
-        "satisfaction_df": satisfaction_df,
-        "overall_satisfaction": overall_satisfaction,
-        "persona_data": persona_data,
-        "phrases_by_group": phrases_by_group,
-        "aspect_winners": aspect_winners,
-        "total_mentions": total_mentions,
-        "date_range": f"{date_from} to {date_to}" if date_from else "All time",
-        "hotel_count": df['hotel_name'].nunique()
-    }
-
-# ═══════════════════════════════════════════════════════════════
-# STAGE 2: INSIGHT EXTRACTOR (Comparative Insights)
-# ═══════════════════════════════════════════════════════════════
-def run_insight_extractor(query_result: dict) -> dict:
-    """Stage 2: Extract comparative insights across groups."""
-    if not query_result.get('success'):
-        return {"success": False, "insights": [], "error": query_result.get('error')}
-    
-    insights = []
-    compare_by = query_result['compare_by']
-    groups = query_result['groups']
-    overall_sat = query_result['overall_satisfaction']
-    aspect_winners = query_result['aspect_winners']
-    satisfaction_df = query_result['satisfaction_df']
-    
-    # 1. Overall Winner Insight
-    sorted_groups = sorted(overall_sat.items(), key=lambda x: x[1], reverse=True)
-    leader = sorted_groups[0]
-    laggard = sorted_groups[-1]
-    gap = leader[1] - laggard[1]
-    
-    insights.append({
-        "type": "overall_winner",
-        "title": f"🏆 Overall Winner: {leader[0]}",
-        "description": f"{leader[0]} leads with {leader[1]}% satisfaction vs {laggard[0]} at {laggard[1]}% (Gap: {gap:.1f}%)",
-        "leader": leader[0],
-        "leader_score": leader[1],
-        "laggard": laggard[0],
-        "laggard_score": laggard[1],
-        "gap": gap,
-        "icon": "🏆"
-    })
-    
-    # 2. Biggest Competitive Gaps
-    sorted_aspects = sorted(aspect_winners.items(), key=lambda x: x[1]['gap'], reverse=True)
-    for aspect, data in sorted_aspects[:3]:
-        if data['gap'] > 5:
-            insights.append({
-                "type": "aspect_gap",
-                "title": f"{ASPECT_ICONS.get(aspect, '📊')} {aspect}: {data['winner']} dominates",
-                "description": f"{data['winner']} scores {data['winner_score']}% vs {data['loser']} at {data['loser_score']}% (Gap: {data['gap']}%)",
-                "aspect": aspect,
-                "winner": data['winner'],
-                "winner_score": data['winner_score'],
-                "loser": data['loser'],
-                "gap": data['gap'],
-                "icon": ASPECT_ICONS.get(aspect, "📊")
-            })
-    
-    # 3. Surprise findings (lower star beats higher)
-    if compare_by == "Star Category" and len(groups) > 1:
-        for aspect, data in aspect_winners.items():
-            try:
-                winner_stars = int(data['winner'])
-                loser_stars = int(data['loser'])
-                if winner_stars < loser_stars and data['gap'] > 10:
-                    insights.append({
-                        "type": "surprise",
-                        "title": f"😮 Surprise: {winner_stars}★ beats {loser_stars}★ on {aspect}",
-                        "description": f"Lower-tier hotels outperform on {aspect} by {data['gap']}%!",
-                        "icon": "😮"
-                    })
-            except:
-                pass
-    
-    # 4. Persona Insights
-    persona_data = query_result.get('persona_data', {})
-    if 'traveler_type' in persona_data:
-        business_pct = {}
-        for group, type_data in persona_data['traveler_type'].items():
-            business_pct[group] = type_data.get('Business', 0) + type_data.get('business', 0)
-        
-        if business_pct:
-            business_leader = max(business_pct.items(), key=lambda x: x[1])
-            if business_leader[1] > 0:
-                insights.append({
-                    "type": "persona",
-                    "title": f"💼 Business Traveler Favorite: {business_leader[0]}",
-                    "description": f"{business_leader[1]:.1f}% of {business_leader[0]}'s reviews come from Business travelers",
-                    "icon": "💼"
-                })
-    
-    # 5. Complaints Comparison
-    phrases_by_group = query_result.get('phrases_by_group', {})
-    if len(groups) >= 2:
-        group1, group2 = groups[0], groups[1]
-        neg1 = list(phrases_by_group.get(group1, {}).get('negative', {}).keys())[:3]
-        neg2 = list(phrases_by_group.get(group2, {}).get('negative', {}).keys())[:3]
-        
-        if neg1 or neg2:
-            insights.append({
-                "type": "complaints",
-                "title": "⚠️ Top Complaints Comparison",
-                "description": f"{group1}: {', '.join(neg1[:2]) if neg1 else 'N/A'} | {group2}: {', '.join(neg2[:2]) if neg2 else 'N/A'}",
-                "icon": "⚠️"
-            })
-    
-    # 6. USPs to Promote
-    for group in groups[:2]:
-        group_strengths = []
-        for aspect, data in aspect_winners.items():
-            if data['winner'] == group and data['gap'] > 10:
-                group_strengths.append(f"{aspect} ({data['winner_score']}%)")
-        
-        if group_strengths:
-            insights.append({
-                "type": "usp",
-                "title": f"✨ {group} USPs to Promote",
-                "description": f"Winning aspects: {', '.join(group_strengths[:3])}",
-                "group": group,
-                "strengths": group_strengths,
-                "icon": "✨"
-            })
-    
-    # Generate LLM summary
-    llm_summary = generate_comparison_summary(query_result, insights)
-    
-    return {
-        "success": True,
-        "insights": insights,
-        "llm_summary": llm_summary,
-        "query_result": query_result
-    }
-
-def generate_comparison_summary(query_result: dict, insights: list) -> str:
-    """Generate LLM-powered comparison summary."""
-    if client is None:
-        return "AI summary unavailable"
-    
-    groups = query_result['groups']
-    overall_sat = query_result['overall_satisfaction']
-    compare_by = query_result['compare_by']
-    
-    context = f"""
-    Analyze this hotel comparison and write 3 punchy insights for LinkedIn:
-    
-    Comparison: {compare_by}
-    Groups: {', '.join(groups)}
-    Reviews: {query_result['total_mentions']:,}
-    
-    Satisfaction: {json.dumps(overall_sat)}
-    
-    Gaps: {json.dumps({k: v for k, v in list(query_result['aspect_winners'].items())[:5]})}
-    
-    Write 3 insights that make hospitality pros stop scrolling.
-    Include specific %. Be provocative but accurate. Under 150 words.
+    query = f"""
+    WITH recent_data AS (
+        SELECT 
+            pl.Name AS hotel_name,
+            s.aspect_id,
+            s.sentiment_type,
+            s.treemap_name AS phrase,
+            e.Review_date,
+            COUNT(*) AS mention_count
+        FROM `{PROJECT}.{DATASET}.product_user_review_enriched` e
+        JOIN `{PROJECT}.{DATASET}.product_user_review_sentiment` s ON e.id = s.user_review_id
+        JOIN `{PROJECT}.{DATASET}.product_list` pl ON e.product_id = pl.product_id
+        WHERE pl.Name IN ('{names_sql}')
+          AND e.Review_date >= DATE_SUB(CURRENT_DATE(), INTERVAL {months} MONTH)
+        GROUP BY pl.Name, s.aspect_id, s.sentiment_type, s.treemap_name, e.Review_date
+    ),
+    aspect_summary AS (
+        SELECT 
+            hotel_name,
+            aspect_id,
+            sentiment_type,
+            SUM(mention_count) AS total_mentions
+        FROM recent_data
+        GROUP BY hotel_name, aspect_id, sentiment_type
+    ),
+    top_phrases AS (
+        SELECT 
+            hotel_name,
+            sentiment_type,
+            phrase,
+            SUM(mention_count) AS phrase_count,
+            ROW_NUMBER() OVER (PARTITION BY hotel_name, sentiment_type ORDER BY SUM(mention_count) DESC) AS rn
+        FROM recent_data
+        GROUP BY hotel_name, sentiment_type, phrase
+    )
+    SELECT 
+        a.hotel_name,
+        a.aspect_id,
+        a.sentiment_type,
+        a.total_mentions,
+        p.phrase AS top_phrase,
+        p.phrase_count
+    FROM aspect_summary a
+    LEFT JOIN top_phrases p ON a.hotel_name = p.hotel_name 
+        AND a.sentiment_type = p.sentiment_type 
+        AND p.rn <= 5
+    ORDER BY a.hotel_name, a.aspect_id, a.sentiment_type
     """
     
     try:
-        sql = f"""
-        SELECT ml_generate_text_llm_result 
-        FROM ML.GENERATE_TEXT(
-            MODEL `{PROJECT}.{DATASET}.gemini_flash_model`,
-            (SELECT @prompt AS prompt),
-            STRUCT(0.4 AS temperature, 400 AS max_output_tokens, TRUE AS flatten_json_output)
-        )
-        """
-        job_cfg = bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("prompt", "STRING", context)]
-        )
-        result = client.query(sql, job_config=job_cfg).to_dataframe()
-        return result["ml_generate_text_llm_result"].iloc[0].strip()
+        result = client.query(query).to_dataframe()
+        return result.to_dict('records') if not result.empty else []
     except:
-        return f"• {groups[0]} leads with {overall_sat.get(groups[0], 0)}% satisfaction\n• Key gaps found across aspects\n• Actionable insights for competitive positioning"
+        return []
 
-# ═══════════════════════════════════════════════════════════════
-# STAGE 3: CHART GENERATOR
-# ═══════════════════════════════════════════════════════════════
-def run_chart_generator(insight_result: dict) -> dict:
-    """Stage 3: Generate comparison visualizations."""
-    if not insight_result.get('success'):
-        return {"success": False, "charts": [], "error": "No insights to visualize"}
+@st.cache_data(ttl=3600)
+def fetch_location_context(hotel_names: tuple):
+    """Fetch nearby competitors with their satisfaction scores by aspect"""
+    if client is None or not hotel_names:
+        return []
     
-    charts = []
-    query_result = insight_result['query_result']
-    satisfaction_df = query_result['satisfaction_df']
-    groups = query_result['groups']
-    compare_by = query_result['compare_by']
-    overall_sat = query_result['overall_satisfaction']
+    names_sql = "', '".join([n.replace("'", "''") for n in hotel_names])
     
-    # 1. Overall Satisfaction Bar
-    sorted_groups = sorted(overall_sat.items(), key=lambda x: x[1], reverse=True)
-    fig_overall = go.Figure(go.Bar(
-        x=[g[1] for g in sorted_groups],
-        y=[str(g[0]) for g in sorted_groups],
-        orientation='h',
-        marker=dict(color=[POSITIVE_COLOR if i == 0 else TEAL_PALETTE[5] for i in range(len(sorted_groups))]),
-        text=[f"{g[1]}%" for g in sorted_groups],
-        textposition='outside'
-    ))
-    fig_overall.update_layout(
-        title=f"Overall Satisfaction: {compare_by} Comparison",
-        height=300, margin=dict(l=120, r=60, t=60, b=40),
-        xaxis=dict(title="Satisfaction %", range=[0, 105]),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+    query = f"""
+    WITH selected_hotels AS (
+        SELECT 
+            pl.Name AS hotel_name,
+            pl.City,
+            pl.Star_Category,
+            pd.Brand,
+            pd.Latitude,
+            pd.Longitude,
+            pd.Address
+        FROM `{PROJECT}.{DATASET}.product_list` pl
+        JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
+        WHERE pl.Name IN ('{names_sql}')
+    ),
+    nearby_competitors AS (
+        SELECT 
+            sh.hotel_name AS selected_hotel,
+            pl.Name AS competitor_name,
+            pd.Brand AS competitor_brand,
+            pl.Star_Category AS competitor_stars,
+            pl.City AS competitor_city,
+            CASE 
+                WHEN sh.Latitude IS NOT NULL AND pd.Latitude IS NOT NULL THEN
+                    ROUND(ST_DISTANCE(
+                        ST_GEOGPOINT(sh.Longitude, sh.Latitude),
+                        ST_GEOGPOINT(pd.Longitude, pd.Latitude)
+                    ) / 1000, 1)
+                ELSE NULL
+            END AS distance_km
+        FROM selected_hotels sh
+        CROSS JOIN `{PROJECT}.{DATASET}.product_list` pl
+        JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
+        WHERE pl.Name NOT IN ('{names_sql}')
+          AND pl.City = sh.City
+          AND ABS(pl.Star_Category - sh.Star_Category) <= 1
+    ),
+    competitor_aspect_scores AS (
+        SELECT 
+            pl.Name AS hotel_name,
+            s.aspect_id,
+            ROUND(SUM(CASE WHEN s.sentiment_type = 'positive' THEN 1 ELSE 0 END) * 100.0 / 
+                  NULLIF(COUNT(*), 0), 0) AS satisfaction_pct
+        FROM `{PROJECT}.{DATASET}.product_user_review_sentiment` s
+        JOIN `{PROJECT}.{DATASET}.product_user_review_enriched` e ON s.user_review_id = e.id
+        JOIN `{PROJECT}.{DATASET}.product_list` pl ON e.product_id = pl.product_id
+        GROUP BY pl.Name, s.aspect_id
+    ),
+    competitor_overall AS (
+        SELECT 
+            hotel_name,
+            ROUND(AVG(satisfaction_pct), 0) AS overall_satisfaction
+        FROM competitor_aspect_scores
+        GROUP BY hotel_name
     )
-    charts.append({"type": "bar_overall", "title": "Overall Satisfaction", "figure": fig_overall,
-                   "description": f"Head-to-head comparison across {len(groups)} {compare_by.lower()}s"})
-    
-    # 2. Aspect Heatmap
-    pivot_df = satisfaction_df.pivot(index='aspect', columns='compare_group', values='satisfaction_pct').fillna(0)
-    pivot_df = pivot_df[[str(g[0]) for g in sorted_groups if str(g[0]) in pivot_df.columns]]
-    
-    fig_heatmap = go.Figure(data=go.Heatmap(
-        z=pivot_df.values, x=pivot_df.columns,
-        y=[f"{ASPECT_ICONS.get(a, '•')} {a}" for a in pivot_df.index],
-        colorscale=[[0, '#fecaca'], [0.5, '#fef3c7'], [1, '#a7f3d0']],
-        text=[[f"{v:.0f}%" for v in row] for row in pivot_df.values],
-        texttemplate="%{text}", textfont={"size": 11}
-    ))
-    fig_heatmap.update_layout(
-        title=f"Aspect Breakdown: {compare_by} Comparison",
-        height=400, margin=dict(l=150, r=20, t=60, b=60), paper_bgcolor='rgba(0,0,0,0)'
-    )
-    charts.append({"type": "heatmap", "title": "Aspect Heatmap", "figure": fig_heatmap,
-                   "description": "Satisfaction across all 8 aspects"})
-    
-    # 3. Radar Overlay
-    fig_radar = go.Figure()
-    colors = ['#0d9488', '#f59e0b', '#8b5cf6', '#ef4444']
-    
-    for i, group in enumerate(groups[:4]):
-        group_data = satisfaction_df[satisfaction_df['compare_group'] == str(group)]
-        aspects = group_data['aspect'].tolist()
-        scores = group_data['satisfaction_pct'].tolist()
-        if aspects and scores:
-            fig_radar.add_trace(go.Scatterpolar(
-                r=scores + [scores[0]], theta=aspects + [aspects[0]],
-                fill='toself', fillcolor=f'rgba({int(colors[i][1:3], 16)}, {int(colors[i][3:5], 16)}, {int(colors[i][5:7], 16)}, 0.2)',
-                line=dict(color=colors[i], width=2), name=str(group)
-            ))
-    
-    fig_radar.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-        showlegend=True, title="Aspect Profile Overlay", height=400, paper_bgcolor='rgba(0,0,0,0)'
-    )
-    charts.append({"type": "radar", "title": "Aspect Radar", "figure": fig_radar,
-                   "description": "Overlapping profiles show strengths and weaknesses"})
-    
-    # 4. Gap Analysis
-    aspect_winners = query_result['aspect_winners']
-    gap_data = sorted(aspect_winners.items(), key=lambda x: x[1]['gap'], reverse=True)[:6]
-    
-    fig_gaps = go.Figure()
-    for aspect, data in gap_data:
-        fig_gaps.add_trace(go.Bar(
-            name=aspect, x=[data['gap']], y=[f"{ASPECT_ICONS.get(aspect, '•')} {aspect}"],
-            orientation='h', marker_color=TEAL_PALETTE[5],
-            text=[f"+{data['gap']}% ({data['winner']})"], textposition='outside'
-        ))
-    
-    fig_gaps.update_layout(
-        title="Biggest Competitive Gaps", height=300,
-        margin=dict(l=140, r=100, t=60, b=40),
-        xaxis=dict(title="Gap %", range=[0, max([d[1]['gap'] for d in gap_data]) * 1.3 if gap_data else 50]),
-        showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-    )
-    charts.append({"type": "gaps", "title": "Competitive Gaps", "figure": fig_gaps,
-                   "description": "Aspects with largest satisfaction differences"})
-    
-    # 5. Persona Mix (if available)
-    persona_data = query_result.get('persona_data', {})
-    if 'traveler_type' in persona_data and len(groups) >= 2:
-        traveler_types = set()
-        for group_data in persona_data['traveler_type'].values():
-            traveler_types.update(group_data.keys())
-        
-        if traveler_types:
-            fig_persona = go.Figure()
-            for i, group in enumerate(groups[:3]):
-                group_traveler = persona_data['traveler_type'].get(str(group), {})
-                fig_persona.add_trace(go.Bar(
-                    name=str(group), x=list(traveler_types),
-                    y=[group_traveler.get(t, 0) for t in traveler_types], marker_color=colors[i]
-                ))
-            
-            fig_persona.update_layout(
-                title="Traveler Mix Comparison", barmode='group', height=300,
-                yaxis=dict(title="% of Reviews"), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-            )
-            charts.append({"type": "persona", "title": "Traveler Mix", "figure": fig_persona,
-                           "description": "Who stays where? Audience distribution"})
-    
-    return {"success": True, "charts": charts, "insight_result": insight_result}
-
-# ═══════════════════════════════════════════════════════════════
-# STAGE 4: ARTICLE WRITER
-# ═══════════════════════════════════════════════════════════════
-def run_article_writer(chart_result: dict, hook_type: str = "brand_overall", tone: str = "professional") -> dict:
-    """Stage 4: Generate LinkedIn article from comparison insights."""
-    if not chart_result.get('success'):
-        return {"success": False, "article": None, "error": "No charts to write about"}
-    
-    insight_result = chart_result['insight_result']
-    query_result = insight_result['query_result']
-    insights = insight_result['insights']
-    
-    groups = query_result['groups']
-    compare_by = query_result['compare_by']
-    overall_sat = query_result['overall_satisfaction']
-    total = query_result['total_mentions']
-    
-    sorted_groups = sorted(overall_sat.items(), key=lambda x: x[1], reverse=True)
-    leader = sorted_groups[0][0]
-    laggard = sorted_groups[-1][0]
-    
-    hook_template = HOOK_LIBRARY.get(hook_type, HOOK_LIBRARY['brand_overall'])
-    hook_vars = {
-        'brand1': groups[0] if len(groups) > 0 else "Brand A",
-        'brand2': groups[1] if len(groups) > 1 else "Brand B",
-        'city1': groups[0] if len(groups) > 0 else "City A",
-        'city2': groups[1] if len(groups) > 1 else "City B",
-        'total': total, 'leader': leader, 'laggard': laggard, 'change': "15"
-    }
-    hook = format_hook(hook_template, **hook_vars)
-    
-    gap_insights = [i for i in insights if i['type'] == 'aspect_gap'][:2]
-    
-    article_prompt = f"""
-    Write a LinkedIn article comparing {compare_by}s in hospitality.
-    
-    HOOK (use exactly): {hook}
-    
-    DATA:
-    - Groups: {', '.join(groups)}
-    - Reviews: {total:,}
-    - Winner: {leader} at {overall_sat.get(leader, 0)}%
-    - Runner-up: {laggard} at {overall_sat.get(laggard, 0)}%
-    - Gap: {sorted_groups[0][1] - sorted_groups[-1][1]:.1f}%
-    
-    FINDINGS: {insight_result.get('llm_summary', '')}
-    
-    GAPS: {json.dumps([{{'aspect': i.get('aspect',''), 'winner': i.get('winner',''), 'gap': i.get('gap',0)}} for i in gap_insights])}
-    
-    REQUIREMENTS:
-    1. Start with hook exactly
-    2. Add context sentence
-    3. Finding #1 with specific %
-    4. Finding #2 with gap data
-    5. "📊 The Takeaway:" section
-    6. End with question
-    7. Add 5 hashtags
-    
-    TONE: {tone}
-    LENGTH: 1,200-1,400 characters
+    SELECT 
+        nc.selected_hotel,
+        nc.competitor_name,
+        nc.competitor_brand,
+        nc.competitor_stars,
+        nc.distance_km,
+        co.overall_satisfaction,
+        -- Pivot aspect scores
+        MAX(CASE WHEN cas.aspect_id = 1 THEN cas.satisfaction_pct END) AS dining_score,
+        MAX(CASE WHEN cas.aspect_id = 2 THEN cas.satisfaction_pct END) AS cleanliness_score,
+        MAX(CASE WHEN cas.aspect_id = 3 THEN cas.satisfaction_pct END) AS amenities_score,
+        MAX(CASE WHEN cas.aspect_id = 4 THEN cas.satisfaction_pct END) AS staff_score,
+        MAX(CASE WHEN cas.aspect_id = 5 THEN cas.satisfaction_pct END) AS room_score,
+        MAX(CASE WHEN cas.aspect_id = 6 THEN cas.satisfaction_pct END) AS location_score,
+        MAX(CASE WHEN cas.aspect_id = 7 THEN cas.satisfaction_pct END) AS value_score
+    FROM nearby_competitors nc
+    LEFT JOIN competitor_overall co ON nc.competitor_name = co.hotel_name
+    LEFT JOIN competitor_aspect_scores cas ON nc.competitor_name = cas.hotel_name
+    GROUP BY nc.selected_hotel, nc.competitor_name, nc.competitor_brand, nc.competitor_stars, nc.distance_km, co.overall_satisfaction
+    ORDER BY nc.distance_km
+    LIMIT 10
     """
     
     try:
-        sql = f"""
-        SELECT ml_generate_text_llm_result 
-        FROM ML.GENERATE_TEXT(
-            MODEL `{PROJECT}.{DATASET}.gemini_flash_model`,
-            (SELECT @prompt AS prompt),
-            STRUCT(0.7 AS temperature, 800 AS max_output_tokens, TRUE AS flatten_json_output)
-        )
-        """
-        job_cfg = bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("prompt", "STRING", article_prompt)]
-        )
-        result = client.query(sql, job_config=job_cfg).to_dataframe()
-        article_text = result["ml_generate_text_llm_result"].iloc[0].strip()
+        result = client.query(query).to_dataframe()
+        return result.to_dict('records') if not result.empty else []
+    except Exception as e:
+        return []
+
+@st.cache_data(ttl=3600)
+def fetch_hotel_details(hotel_names: tuple):
+    """Fetch hotel location details including nearby landmarks"""
+    if client is None or not hotel_names:
+        return []
+    
+    names_sql = "', '".join([n.replace("'", "''") for n in hotel_names])
+    
+    query = f"""
+    SELECT 
+        pl.Name AS hotel_name,
+        pl.City,
+        pl.Star_Category,
+        pd.Brand,
+        pd.Address,
+        pd.Latitude,
+        pd.Longitude,
+        pd.Rating AS google_rating,
+        pd.Amenities
+    FROM `{PROJECT}.{DATASET}.product_list` pl
+    JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
+    WHERE pl.Name IN ('{names_sql}')
+    """
+    
+    try:
+        result = client.query(query).to_dataframe()
+        return result.to_dict('records') if not result.empty else []
     except:
-        article_text = f"""{hook}
+        return []
 
-We analyzed {total:,} guest reviews to find out which {compare_by.lower()} delivers the best experience.
+# ─────────────────────────────────────────
+# CHAT CLIENT
+# ─────────────────────────────────────────
+@st.cache_resource
+def get_chat_client():
+    try:
+        from google.cloud import geminidataanalytics_v1alpha as gda
+        credentials = get_credentials()
+        if credentials:
+            from google.api_core import client_options
+            return gda.DataChatServiceClient(credentials=credentials, client_options=client_options.ClientOptions())
+        return gda.DataChatServiceClient()
+    except:
+        return None
 
-📊 Finding #1: {leader} leads with {overall_sat.get(leader, 0)}% satisfaction
-That's {sorted_groups[0][1] - sorted_groups[-1][1]:.1f}% ahead of {laggard}.
+# ─────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────
+st.markdown("""
+<div class="main-header">
+    <h1>&#127976; Smaartbrand Intelligence</h1>
+    <p>Deep Insights & AI Chat - Multi-language - Smart Corrections</p>
+</div>
+""", unsafe_allow_html=True)
 
-📊 Finding #2: The biggest battleground? {gap_insights[0]['aspect'] if gap_insights else 'Service'}
-{gap_insights[0]['winner'] if gap_insights else leader} dominates with a {gap_insights[0]['gap'] if gap_insights else 10}% lead.
+# ─────────────────────────────────────────
+# TABS
+# ─────────────────────────────────────────
+tab_insights, tab_chat = st.tabs(["Deep Insights", "Chat with Data"])
 
-📊 The Takeaway:
-For {laggard}, the path forward is clear: focus on {gap_insights[0]['aspect'] if gap_insights else 'basics'}.
-For {leader}, maintain the edge but watch for challengers.
-
-💬 Which {compare_by.lower()} delivers the best guest experience in your opinion?
-
-#HospitalityIndustry #HotelManagement #GuestExperience #DataDriven #Smaartbrand
-"""
+# ═══════════════════════════════════════════
+# TAB 1: DEEP INSIGHTS
+# ═══════════════════════════════════════════
+with tab_insights:
     
-    hashtags = re.findall(r'#\w+', article_text)
-    
-    return {
-        "success": True,
-        "article": {
-            "text": article_text,
-            "hook_used": hook,
-            "word_count": len(article_text.split()),
-            "char_count": len(article_text),
-            "hashtags": hashtags[:8],
-            "comparison": {"type": compare_by, "groups": groups, "winner": leader, "total_reviews": total}
-        },
-        "charts": chart_result['charts'],
-        "insights": insights
-    }
-
-# ═══════════════════════════════════════════════════════════════
-# MAIN APPLICATION
-# ═══════════════════════════════════════════════════════════════
-def main():
-    st.markdown("""
-    <div class="main-header">
-        <h1>🚀 Smaartbrand Intelligence Pipeline</h1>
-        <p>Compare Brands • Cities • Star Categories → LinkedIn-Ready Insights</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Session state
-    for key in ['pipeline_stage', 'query_result', 'insight_result', 'chart_result', 'article_result']:
-        if key not in st.session_state:
-            st.session_state[key] = 0 if key == 'pipeline_stage' else None
-    
-    # Stage Indicator
-    stages = ["1. Compare", "2. Insights", "3. Charts", "4. Article"]
-    cols = st.columns(4)
-    for i, (col, stage) in enumerate(zip(cols, stages)):
-        status = "complete" if i < st.session_state.pipeline_stage else ("active" if i == st.session_state.pipeline_stage else "pending")
-        icon = "✓" if status == "complete" else str(i + 1)
-        color = "#10b981" if status == "complete" else ("#0d9488" if status == "active" else "#e5e7eb")
-        col.markdown(f'<div style="text-align:center;"><div style="width:36px;height:36px;border-radius:50%;background:{color};color:{"white" if status != "pending" else "#9ca3af"};display:inline-flex;align-items:center;justify-content:center;font-weight:bold;">{icon}</div><div style="font-size:11px;">{stage}</div></div>', unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # Sidebar
     with st.sidebar:
-        st.markdown("### 🎯 Controls")
-        if st.button("🔄 Reset", use_container_width=True):
-            for key in ['pipeline_stage', 'query_result', 'insight_result', 'chart_result', 'article_result']:
-                st.session_state[key] = 0 if key == 'pipeline_stage' else None
-            st.rerun()
-        
-        st.divider()
+        st.markdown("### 🎯 Select Data")
         meta = get_metadata()
+        selected_hotels = []
         
         if not meta.empty:
-            st.markdown("### 📊 Compare By")
-            compare_by = st.radio("", ["Brand", "City", "Star Category"], horizontal=True)
-            
+            compare_by = st.radio("Compare By", ["Hotel", "Brand", "City", "Star Rating"], horizontal=True)
             st.divider()
             
-            if compare_by == "Brand":
-                options = sorted(meta["Brand"].dropna().unique().tolist())
-                selected_items = st.multiselect("Select Brands", options, default=options[:2] if len(options) >= 2 else options)
-                st.caption("💡 ITC vs Taj = great content!")
+            if compare_by == "Hotel":
+                all_brands = ["All"] + sorted(meta["Brand"].dropna().unique().tolist())
+                brand_f = st.selectbox("Brand", all_brands)
+                filtered = meta if brand_f == "All" else meta[meta["Brand"] == brand_f]
+                
+                all_cities = ["All"] + sorted(filtered["City"].dropna().unique().tolist())
+                city_f = st.selectbox("City", all_cities)
+                filtered = filtered if city_f == "All" else filtered[filtered["City"] == city_f]
+                
+                selected_hotels = st.multiselect("Hotels", sorted(filtered["hotel_name"].unique()), placeholder="Select...")
+            
+            elif compare_by == "Brand":
+                brands = st.multiselect("Brands", sorted(meta["Brand"].unique()), placeholder="Select...")
+                if brands:
+                    selected_hotels = meta[meta["Brand"].isin(brands)]["hotel_name"].unique().tolist()
+            
             elif compare_by == "City":
-                options = sorted(meta["City"].dropna().unique().tolist())
-                selected_items = st.multiselect("Select Cities", options, default=options[:2] if len(options) >= 2 else options)
-                st.caption("💡 Bangalore vs Mumbai = high engagement")
-            else:
-                options = sorted(meta["star_category"].dropna().unique().tolist())
-                selected_items = st.multiselect("Select Stars", options, default=options[:2] if len(options) >= 2 else options,
-                                                format_func=lambda x: f"{'⭐' * int(x)}")
-                selected_items = [int(x) for x in selected_items]
+                cities = st.multiselect("Cities", sorted(meta["City"].unique()), placeholder="Select...")
+                if cities:
+                    selected_hotels = meta[meta["City"].isin(cities)]["hotel_name"].unique().tolist()
             
-            st.divider()
-            st.markdown("### 📅 Date Range")
-            c1, c2 = st.columns(2)
-            date_from = c1.date_input("From", datetime.now() - timedelta(days=180))
-            date_to = c2.date_input("To", datetime.now())
+            elif compare_by == "Star Rating":
+                stars = st.multiselect("Stars", sorted(meta["star_category"].unique()), 
+                                       format_func=lambda x: f"{'⭐' * int(x)}", placeholder="Select...")
+                if stars:
+                    selected_hotels = meta[meta["star_category"].isin(stars)]["hotel_name"].unique().tolist()
             
-            st.divider()
-            st.markdown("### ✍️ Article")
-            hook_map = {"Brand": ["brand_overall", "brand_dining", "brand_staff", "brand_value"],
-                        "City": ["city_overall", "city_business", "city_leisure"],
-                        "Star Category": ["star_overall", "star_value", "star_service"]}
-            hook_type = st.selectbox("Hook", hook_map.get(compare_by, ["brand_overall"]),
-                                     format_func=lambda x: x.replace("_", " ").title())
-            tone = st.selectbox("Tone", ["professional", "provocative", "analytical"])
+            if selected_hotels:
+                st.success(f"✓ {len(selected_hotels)} hotels")
+    
+    if not selected_hotels:
+        st.info("👈 Use sidebar to select hotels, brands, cities or star ratings.")
+    else:
+        with st.spinner("Loading..."):
+            df = fetch_data(tuple(selected_hotels))
+        
+        if df.empty:
+            st.warning("No data found.")
         else:
-            st.warning("⚠️ No metadata")
-            selected_items, compare_by = [], "Brand"
-            date_from, date_to = datetime.now() - timedelta(days=180), datetime.now()
-            hook_type, tone = "brand_overall", "professional"
-    
-    # Main Area
-    col1, col2 = st.columns([2.5, 1])
-    
-    with col1:
-        # STAGE 0: SETUP
-        if st.session_state.pipeline_stage == 0:
-            st.markdown("## 1️⃣ Select & Compare")
+            hotels_list = df["hotel_name"].unique().tolist()
+            num_hotels = min(len(hotels_list), 8)
             
-            if len(selected_items) >= 2:
-                st.markdown("### 🆚 Your Comparison")
-                preview_cols = st.columns(len(selected_items[:4]))
-                for i, (c, item) in enumerate(zip(preview_cols, selected_items[:4])):
-                    c.markdown(f'<div class="compare-card"><h3>{compare_by}</h3><div class="metric">{item}</div></div>', unsafe_allow_html=True)
+            # SATISFACTION SCORE
+            st.markdown("<div class='section-header'>Satisfaction Score</div>", unsafe_allow_html=True)
+            
+            metrics = []
+            for h in hotels_list:
+                hd = df[df["hotel_name"] == h]
+                pos = hd[hd["sentiment_type"].str.lower() == "positive"]["mention_count"].sum()
+                neg = hd[hd["sentiment_type"].str.lower() == "negative"]["mention_count"].sum()
+                total = pos + neg
+                metrics.append({"hotel": h, "reviews": total, 
+                                "pos_pct": round(pos/total*100) if total else 0,
+                                "neg_pct": round(neg/total*100) if total else 0,
+                                "score": round(pos/total*100) if total else 0})
+            
+            cols = st.columns([1.2] + [1] * num_hotels)
+            cols[0].write("")
+            for i, h in enumerate(hotels_list[:8]):
+                cols[i+1].markdown(f"<div class='hotel-name-cell'>{h if len(h)<=20 else h[:18]+'...'}</div>", unsafe_allow_html=True)
+            
+            for label, key, color in [("Reviews","reviews",False),("+ve %","pos_pct",True),("-ve %","neg_pct",False),("Score","score",True)]:
+                cols = st.columns([1.2] + [1] * num_hotels)
+                cols[0].write(label)
+                for i, m in enumerate(metrics[:8]):
+                    bg = get_color_for_score(m[key]) if color else "#f1f5f9"
+                    disp = f"{m[key]:,}" if key=="reviews" else f"{m[key]}%"
+                    cols[i+1].markdown(f"<div class='score-cell' style='background:{bg};'>{disp}</div>", unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # DRIVER ANALYSIS
+            st.markdown("<div class='section-header'>Driver Analysis</div>", unsafe_allow_html=True)
+            
+            driver = []
+            for h in hotels_list:
+                hd = df[df["hotel_name"] == h]
+                for asp in sorted(df["aspect"].unique()):
+                    ad = hd[hd["aspect"] == asp]
+                    pos = ad[ad["sentiment_type"].str.lower()=="positive"]["mention_count"].sum()
+                    neg = ad[ad["sentiment_type"].str.lower()=="negative"]["mention_count"].sum()
+                    total = pos + neg
+                    driver.append({"hotel": h, "aspect": asp, "score": round(pos/total*100) if total else 0})
+            
+            driver_df = pd.DataFrame(driver)
+            
+            if len(hotels_list) > 1:
+                pivot = driver_df.pivot(index="aspect", columns="hotel", values="score").fillna(0)
+                cols = st.columns([1.2] + [1] * num_hotels)
+                cols[0].markdown("**Aspect**")
+                for i, h in enumerate(hotels_list[:8]):
+                    cols[i+1].markdown(f"<div class='hotel-name-cell'>{h if len(h)<=20 else h[:18]+'...'}</div>", unsafe_allow_html=True)
                 
-                st.markdown(f'<div class="vs-text">{" vs ".join([str(s) for s in selected_items[:4]])}</div>', unsafe_allow_html=True)
-                st.divider()
-                
-                if st.button("🚀 Run Comparison", type="primary", use_container_width=True):
-                    with st.spinner("Analyzing..."):
-                        result = run_query_agent(compare_by, selected_items, str(date_from), str(date_to))
-                        if result['success']:
-                            st.session_state.query_result = result
-                            st.session_state.pipeline_stage = 1
-                            st.success(f"✅ {result['total_mentions']:,} mentions from {result['hotel_count']} hotels")
-                            st.rerun()
-                        else:
-                            st.error(result['error'])
+                for asp in sorted(pivot.index):
+                    cols = st.columns([1.2] + [1] * num_hotels)
+                    cols[0].write(f"{ASPECT_ICONS.get(asp,'•')} {asp}")
+                    for i, h in enumerate(hotels_list[:8]):
+                        s = pivot.loc[asp, h] if h in pivot.columns else 0
+                        cols[i+1].markdown(f"<div class='score-cell' style='background:{get_color_for_score(s)};'>{int(s)}%</div>", unsafe_allow_html=True)
             else:
-                st.warning(f"⚠️ Select at least 2 {compare_by.lower()}s")
-        
-        # STAGE 1: INSIGHTS
-        elif st.session_state.pipeline_stage == 1:
-            st.markdown("## 2️⃣ Extract Insights")
-            qr = st.session_state.query_result
-            
-            sorted_groups = sorted(qr['overall_satisfaction'].items(), key=lambda x: x[1], reverse=True)
-            cols = st.columns(len(sorted_groups[:4]))
-            for i, (c, (group, score)) in enumerate(zip(cols, sorted_groups[:4])):
-                badge = "🥇" if i == 0 else ("🥈" if i == 1 else "")
-                c.markdown(f'<div class="compare-card" style="{"background:linear-gradient(135deg,#10b981,#059669);" if i==0 else ""}"><h3>{badge} {group}</h3><div class="metric">{score}%</div></div>', unsafe_allow_html=True)
+                single = driver_df[driver_df["hotel"]==hotels_list[0]].sort_values("score")
+                fig = go.Figure(go.Bar(y=[f"{ASPECT_ICONS.get(a,'•')} {a}" for a in single["aspect"]],
+                    x=single["score"], orientation='h', marker_color=[get_color_for_score(s) for s in single["score"]],
+                    text=[f"{int(s)}%" for s in single["score"]], textposition='outside'))
+                fig.update_layout(height=280, margin=dict(l=0,r=40,t=10,b=0), xaxis=dict(range=[0,105]), plot_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig, use_container_width=True)
             
             st.divider()
-            c1, c2 = st.columns(2)
-            if c1.button("🔍 Extract Insights", type="primary", use_container_width=True):
-                with st.spinner("Finding gaps..."):
-                    result = run_insight_extractor(qr)
-                    if result['success']:
-                        st.session_state.insight_result = result
-                        st.session_state.pipeline_stage = 2
-                        st.rerun()
-            if c2.button("← Back", use_container_width=True):
-                st.session_state.pipeline_stage = 0
-                st.rerun()
-        
-        # STAGE 2: CHARTS
-        elif st.session_state.pipeline_stage == 2:
-            st.markdown("## 3️⃣ Generate Charts")
-            ir = st.session_state.insight_result
             
-            st.markdown("### 🎯 Key Findings")
-            for ins in ir['insights'][:5]:
-                badge = f"<span class='winner-badge'>GAP: {ins.get('gap',0)}%</span>" if ins['type'] == 'aspect_gap' else ""
-                st.markdown(f'<div class="insight-card"><div class="insight-title">{ins["icon"]} {ins["title"]} {badge}</div>{ins["description"]}</div>', unsafe_allow_html=True)
+            # TOP PHRASES
+            st.markdown("<div class='section-header'>Top Phrases</div>", unsafe_allow_html=True)
+            pc1, pc2 = st.columns(2)
+            sent_f = pc1.selectbox("Sentiment", ["All","Positive","Negative"], key="sf")
+            asp_f = pc2.selectbox("Aspect", ["All"]+sorted(df["aspect"].unique().tolist()), key="af")
             
-            if ir.get('llm_summary'):
-                with st.expander("🤖 AI Analysis", expanded=True):
-                    st.markdown(ir['llm_summary'])
+            pdf = df.copy()
+            if sent_f != "All":
+                pdf = pdf[pdf["sentiment_type"].str.lower()==sent_f.lower()]
+            if asp_f != "All":
+                pdf = pdf[pdf["aspect"]==asp_f]
             
-            st.divider()
-            c1, c2 = st.columns(2)
-            if c1.button("📊 Generate Charts", type="primary", use_container_width=True):
-                with st.spinner("Creating visuals..."):
-                    result = run_chart_generator(ir)
-                    if result['success']:
-                        st.session_state.chart_result = result
-                        st.session_state.pipeline_stage = 3
-                        st.rerun()
-            if c2.button("← Back", use_container_width=True):
-                st.session_state.pipeline_stage = 1
-                st.rerun()
-        
-        # STAGE 3: ARTICLE
-        elif st.session_state.pipeline_stage == 3:
-            st.markdown("## 4️⃣ Write Article")
-            cr = st.session_state.chart_result
+            phrases = (pdf.groupby(["phrase","sentiment_type"])["mention_count"].sum().unstack(fill_value=0)
+                .assign(total=lambda x: x.get("positive",0)+x.get("negative",0),
+                        pos_pct=lambda x: x.get("positive",0)/(x.get("positive",0)+x.get("negative",0)).replace(0,1)*100)
+                .sort_values("total",ascending=False).head(8).reset_index())
             
-            tabs = st.tabs([c['title'] for c in cr['charts'][:4]])
-            for tab, chart in zip(tabs, cr['charts'][:4]):
-                with tab:
-                    st.plotly_chart(chart['figure'], use_container_width=True)
+            if not phrases.empty:
+                for i in range(0, len(phrases), 4):
+                    cols = st.columns(4)
+                    for j, (_, row) in enumerate(phrases.iloc[i:i+4].iterrows()):
+                        with cols[j]:
+                            txt = row["phrase"][:28]+"..." if len(str(row["phrase"]))>28 else row["phrase"]
+                            pct = row.get("pos_pct",50)
+                            st.markdown(f"""<div class='phrase-card'>
+                                <div class='phrase-text'>{txt}</div>
+                                <div class='phrase-count'>{int(row['total']):,}</div>
+                                <div style='height:5px;border-radius:3px;background:linear-gradient(to right,#10b981 {pct}%,#ef4444 {pct}%);margin-top:6px;'></div>
+                            </div>""", unsafe_allow_html=True)
             
             st.divider()
-            c1, c2 = st.columns(2)
-            if c1.button("✍️ Generate Article", type="primary", use_container_width=True):
-                with st.spinner("Writing..."):
-                    result = run_article_writer(cr, hook_type, tone)
-                    if result['success']:
-                        st.session_state.article_result = result
-                        st.session_state.pipeline_stage = 4
-                        st.rerun()
-            if c2.button("← Back", use_container_width=True):
-                st.session_state.pipeline_stage = 2
-                st.rerun()
-        
-        # STAGE 4: OUTPUT
-        elif st.session_state.pipeline_stage == 4:
-            st.markdown("## ✅ Your LinkedIn Article")
-            ar = st.session_state.article_result
-            article = ar['article']
             
-            st.markdown('<p style="text-align:center;"><span class="linkedin-badge">📱 Ready for LinkedIn</span></p>', unsafe_allow_html=True)
-            comp = article['comparison']
-            st.markdown(f"**{comp['type']}:** {', '.join(comp['groups'][:3])} | **Winner:** {comp['winner']} | **Reviews:** {comp['total_reviews']:,}")
+            # BRAND ASSOCIATIONS (multiple hotels)
+            if len(hotels_list) > 1:
+                st.markdown("<div class='section-header'>Brand Associations</div>", unsafe_allow_html=True)
+                st.caption("● Strong  ◐ Weak  ○ None")
+                
+                assoc = []
+                for asp in sorted(df["aspect"].unique()):
+                    row = {"aspect": asp}
+                    scores = []
+                    for h in hotels_list[:8]:
+                        hd = df[(df["hotel_name"]==h)&(df["aspect"]==asp)]
+                        pos = hd[hd["sentiment_type"].str.lower()=="positive"]["mention_count"].sum()
+                        neg = hd[hd["sentiment_type"].str.lower()=="negative"]["mention_count"].sum()
+                        s = pos/(pos+neg)*100 if (pos+neg) else 0
+                        row[h] = s
+                        scores.append(s)
+                    avg = np.mean(scores) if scores else 50
+                    for h in hotels_list[:8]:
+                        diff = row.get(h,0) - avg
+                        row[f"{h}_a"] = "strong" if diff>10 else ("weak" if diff>-5 else "none")
+                    assoc.append(row)
+                
+                cols = st.columns([1.2]+[1]*num_hotels)
+                cols[0].markdown("**Aspect**")
+                for i, h in enumerate(hotels_list[:8]):
+                    cols[i+1].markdown(f"<div class='hotel-name-cell'>{h if len(h)<=20 else h[:18]+'...'}</div>", unsafe_allow_html=True)
+                
+                for row in assoc:
+                    cols = st.columns([1.2]+[1]*num_hotels)
+                    cols[0].write(f"{ASPECT_ICONS.get(row['aspect'],'•')} {row['aspect']}")
+                    for i, h in enumerate(hotels_list[:8]):
+                        a = row.get(f"{h}_a","none")
+                        dot = {"strong":"dot-strong","weak":"dot-weak","none":"dot-none"}[a]
+                        cols[i+1].markdown(f"<div style='text-align:center;'><span class='{dot}'></span></div>", unsafe_allow_html=True)
+                
+                st.divider()
             
-            st.divider()
-            st.markdown(f'<div class="article-preview">{article["text"]}</div>', unsafe_allow_html=True)
+            # ─────────────────────────────────────────
+            # SMAARTANALYST (BigQuery ML)
+            # ─────────────────────────────────────────
+            st.markdown("<div class='section-header'>🤖 SmaartAnalyst</div>", unsafe_allow_html=True)
+            st.caption("Ask questions about the selected data • Multi-language • Powered by BigQuery ML + Gemini")
             
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Characters", f"{article['char_count']:,}")
-            c2.metric("Words", article['word_count'])
-            c3.metric("Hashtags", len(article['hashtags']))
+            # Context description
+            ctx_brands = df["Brand"].unique().tolist()
+            ctx_cities = df["City"].unique().tolist()
+            if len(hotels_list) == 1:
+                st.markdown(f"Analyzing: **{hotels_list[0]}**")
+            elif len(ctx_brands) == 1:
+                st.markdown(f"Analyzing: **{ctx_brands[0]}** hotels")
+            elif len(ctx_cities) == 1:
+                st.markdown(f"Analyzing: hotels in **{ctx_cities[0]}**")
+            else:
+                st.markdown(f"Analyzing: **{len(hotels_list)} hotels**")
             
-            st.divider()
-            edited = st.text_area("Edit Article", article['text'], height=300)
+            # Build context
+            def build_context(data_df, hotel_names_tuple):
+                def calc_sat(g):
+                    pos = g[g["sentiment_type"].str.lower()=="positive"]["mention_count"].sum()
+                    neg = g[g["sentiment_type"].str.lower()=="negative"]["mention_count"].sum()
+                    return round(pos/(pos+neg)*100 if (pos+neg) else 0, 1)
+                
+                ah = data_df.groupby(["hotel_name","aspect"]).apply(calc_sat).reset_index(name="sat_pct")
+                dr = data_df.groupby("aspect").apply(lambda g: pd.Series({
+                    "mentions": int(g["mention_count"].sum()), "sat_pct": calc_sat(g)
+                })).reset_index()
+                pp = data_df[data_df["sentiment_type"].str.lower()=="positive"].groupby("phrase")["mention_count"].sum().nlargest(10).reset_index(name="cnt")
+                np_ = data_df[data_df["sentiment_type"].str.lower()=="negative"].groupby("phrase")["mention_count"].sum().nlargest(10).reset_index(name="cnt")
+                
+                # Recent trends (last 3 months)
+                recent_info = ""
+                if "Review_date" in data_df.columns and data_df["Review_date"].notna().any():
+                    three_months_ago = pd.Timestamp.now() - pd.DateOffset(months=3)
+                    recent_df = data_df[data_df["Review_date"] >= three_months_ago]
+                    
+                    if not recent_df.empty:
+                        # Recent positive phrases
+                        recent_pos = recent_df[recent_df["sentiment_type"].str.lower()=="positive"].groupby("phrase")["mention_count"].sum().nlargest(5)
+                        recent_neg = recent_df[recent_df["sentiment_type"].str.lower()=="negative"].groupby("phrase")["mention_count"].sum().nlargest(5)
+                        
+                        # Recent aspect scores
+                        recent_aspects = recent_df.groupby("aspect").apply(calc_sat).reset_index(name="sat_pct")
+                        
+                        recent_info = f"\n[LAST 3 MONTHS DATA]\n"
+                        recent_info += f"Recent Reviews: {int(recent_df['mention_count'].sum())} mentions\n"
+                        recent_info += f"Recent Positive Phrases: {', '.join(recent_pos.index.tolist())}\n"
+                        recent_info += f"Recent Negative Phrases: {', '.join(recent_neg.index.tolist())}\n"
+                        recent_info += f"Recent Aspect Scores:\n{recent_aspects.to_csv(index=False)}"
+                
+                # Persona & Traveler Analysis
+                persona_info = ""
+                if "traveler_type" in data_df.columns:
+                    traveler_dist = data_df.groupby("traveler_type")["mention_count"].sum()
+                    if not traveler_dist.empty:
+                        total = traveler_dist.sum()
+                        persona_info += "\n[TRAVELER MIX]\n"
+                        for t, cnt in traveler_dist.nlargest(5).items():
+                            if pd.notna(t) and t:
+                                persona_info += f"• {t}: {cnt/total*100:.1f}%\n"
+                
+                if "stay_purpose" in data_df.columns:
+                    purpose_dist = data_df.groupby("stay_purpose")["mention_count"].sum()
+                    if not purpose_dist.empty:
+                        total = purpose_dist.sum()
+                        persona_info += "\n[STAY PURPOSE]\n"
+                        for p, cnt in purpose_dist.nlargest(5).items():
+                            if pd.notna(p) and p:
+                                persona_info += f"• {p}: {cnt/total*100:.1f}%\n"
+                
+                if "gender" in data_df.columns:
+                    gender_dist = data_df.groupby("gender")["mention_count"].sum()
+                    if not gender_dist.empty:
+                        total = gender_dist.sum()
+                        persona_info += "\n[GENDER MIX]\n"
+                        for g, cnt in gender_dist.items():
+                            if pd.notna(g) and g:
+                                persona_info += f"• {g}: {cnt/total*100:.1f}%\n"
+                
+                # Persona-specific insights (what each segment complains about)
+                persona_insights = ""
+                if "traveler_type" in data_df.columns:
+                    for ttype in data_df["traveler_type"].dropna().unique()[:3]:
+                        tdata = data_df[data_df["traveler_type"] == ttype]
+                        neg_phrases = tdata[tdata["sentiment_type"].str.lower()=="negative"].groupby("phrase")["mention_count"].sum().nlargest(3)
+                        if not neg_phrases.empty:
+                            persona_insights += f"\n{ttype} travelers complain about: {', '.join(neg_phrases.index.tolist())}"
+                
+                # Fetch location context (nearby competitors)
+                location_ctx = fetch_location_context(hotel_names_tuple)
+                hotel_details = fetch_hotel_details(hotel_names_tuple)
+                
+                # Format competitor data with aspect scores
+                competitor_info = ""
+                if location_ctx:
+                    for comp in location_ctx[:5]:  # Top 5 competitors
+                        competitor_info += f"\n• {comp.get('competitor_name', 'N/A')} ({comp.get('competitor_brand', '')} {comp.get('competitor_stars', '')}⭐)"
+                        competitor_info += f" - {comp.get('distance_km', '?')}km away"
+                        competitor_info += f" - Overall: {comp.get('overall_satisfaction', '?')}%"
+                        competitor_info += f" | Dining:{comp.get('dining_score', '?')}%"
+                        competitor_info += f" Staff:{comp.get('staff_score', '?')}%"
+                        competitor_info += f" Room:{comp.get('room_score', '?')}%"
+                        competitor_info += f" Cleanliness:{comp.get('cleanliness_score', '?')}%"
+                        competitor_info += f" Amenities:{comp.get('amenities_score', '?')}%"
+                        competitor_info += f" Value:{comp.get('value_score', '?')}%"
+                
+                # Format hotel location details
+                location_info = ""
+                if hotel_details:
+                    for h in hotel_details:
+                        location_info += f"\n{h.get('hotel_name', 'N/A')}: "
+                        location_info += f"Address: {h.get('Address', 'N/A')}, "
+                        location_info += f"Google Rating: {h.get('google_rating', 'N/A')}/5, "
+                        location_info += f"Amenities: {h.get('Amenities', 'N/A')[:100]}..."
+                
+                return {
+                    "aspect_hotel": ah.to_csv(index=False), 
+                    "driver": dr.to_csv(index=False),
+                    "pos_phrases": pp.to_csv(index=False), 
+                    "neg_phrases": np_.to_csv(index=False),
+                    "recent_trends": recent_info if recent_info else "Recent data not available",
+                    "persona_data": persona_info if persona_info else "Persona data not available",
+                    "persona_insights": persona_insights if persona_insights else "",
+                    "hotels": ", ".join(data_df["hotel_name"].unique()[:10]),
+                    "brands": ", ".join(data_df["Brand"].unique()),
+                    "cities": ", ".join(data_df["City"].unique()),
+                    "stars": ", ".join([str(int(s)) for s in data_df["Star_Category"].unique()]),
+                    "competitors": competitor_info if competitor_info else "No nearby competitors found",
+                    "location_details": location_info if location_info else "Location details not available"
+                }
             
-            c1, c2, c3, c4 = st.columns(4)
-            if c1.button("📋 Copy", use_container_width=True):
-                st.code(edited)
-            c2.download_button("⬇️ Download", edited, f"linkedin_{compare_by.lower()}.txt", use_container_width=True)
-            if c3.button("🔄 Regenerate", use_container_width=True):
-                st.session_state.pipeline_stage = 3
-                st.rerun()
-            if c4.button("🆕 New", type="primary", use_container_width=True):
-                for k in ['pipeline_stage', 'query_result', 'insight_result', 'chart_result', 'article_result']:
-                    st.session_state[k] = 0 if k == 'pipeline_stage' else None
-                st.rerun()
-            
-            st.divider()
-            st.markdown("### 📊 Charts for Post")
-            cc = st.columns(2)
-            for i, ch in enumerate(ar['charts'][:2]):
-                with cc[i]:
-                    st.plotly_chart(ch['figure'], use_container_width=True)
-    
-    with col2:
-        st.markdown("### 💡 Tips")
-        tips = {
-            0: "**Compare By:**\n- Brand vs Brand\n- City vs City\n- Star Category",
-            1: "**Data:**\n- Unknown excluded ✓\n- Mention % used ✓",
-            2: "**Insights:**\n- Biggest gaps = best content",
-            3: "**Charts:**\n- Use heatmap for multi-aspect",
-            4: "**Post:**\n- Best: Tue-Thu 8-10 AM\n- Add chart as image"
-        }
-        st.info(tips.get(st.session_state.pipeline_stage, tips[0]))
-        
-        if st.session_state.query_result:
-            st.divider()
-            qr = st.session_state.query_result
-            st.metric("Reviews", f"{qr['total_mentions']:,}")
-            st.metric("Hotels", qr['hotel_count'])
-    
-    st.divider()
-    st.markdown('<div style="text-align:center;color:#888;font-size:12px;">🚀 Smaartbrand Pipeline | Hotels → Auto (Q2) → Mobile (Q3) | © Acquink 2026</div>', unsafe_allow_html=True)
+            def run_analyst(q, data_df, hist):
+                ctx = build_context(data_df, tuple(hotels_list))
+                hist_txt = "\n".join([f"{'User' if m['role']=='user' else 'SmaartAnalyst'}: {m['content']}" for m in hist[-4:]])
+                
+                prompt = f"""You are SmaartAnalyst, an AI-powered decision intelligence assistant for the hospitality industry.
 
-if __name__ == "__main__":
-    main()
+=== WHO YOU SERVE ===
+Hotel operations teams who need actionable intelligence from guest feedback:
+• Brand Manager - Brand perception, competitive positioning, reputation management
+• SEO & Marketing - Keywords, USPs, ad copy, competitive differentiation, what to highlight
+• Housekeeping - Room cleanliness, bathroom hygiene, linen quality, maintenance
+• Front Desk - Check-in/out experience, staff behavior, reception, concierge
+• Operations - Overall service delivery, process improvements, staff training
+• F&B (Food & Beverage) - Restaurant quality, breakfast, dining experience, menu
+
+=== YOUR PURPOSE ===
+Transform guest sentiment into DECISIONS and ACTIONS by department.
+Use location intelligence to provide competitive positioning advice.
+Support R&D mode for new hotel planning with persona and competitor insights.
+Every response MUST end with categorized action items.
+
+=== CONTEXT ===
+Hotels: {ctx['hotels']}
+Brands: {ctx['brands']}
+Cities: {ctx['cities']}
+Star Category: {ctx['stars']}
+
+=== LOCATION INTELLIGENCE ===
+{ctx['location_details'] if ctx['location_details'] else 'Location details not available'}
+
+=== NEARBY COMPETITORS (same area, similar star category) ===
+{ctx['competitors'] if ctx['competitors'] else 'Competitor data not available'}
+
+=== GUEST PERSONAS & TRAVELER DATA ===
+{ctx.get('persona_data', 'Persona data not available')}
+{ctx.get('persona_insights', '')}
+
+=== RECENT TRENDS (Last 3 Months) ===
+{ctx['recent_trends'] if ctx.get('recent_trends') else 'Recent data not available'}
+
+=== SPELLING CORRECTIONS ===
+Cities: bangalore/blr/banglore→Bengaluru, bombay→Mumbai, madras→Chennai, calcutta→Kolkata
+Hotels: marriot→Marriott, oberoy→Oberoi, viventa→Vivanta, lela→Leela
+Aspects: food/restaurant→Dining, clean/hygiene→Cleanliness, price/cost→Value for Money
+
+=== CONVERSATION HISTORY ===
+{hist_txt}
+
+=== DATA ===
+[Aspect x Hotel Satisfaction % - ALL TIME]
+{ctx['aspect_hotel']}
+
+[Driver Analysis]
+{ctx['driver']}
+
+[What Guests Love - Top Phrases]
+{ctx['pos_phrases']}
+
+[What Guests Complain About - Top Phrases]
+{ctx['neg_phrases']}
+
+=== QUESTION ===
+{q}
+
+=== RESPONSE FORMAT (ALWAYS FOLLOW THIS) ===
+
+📊 **Insight**: [2-3 sentence summary with specific scores. Include persona/traveler data if relevant. Compare to competitors if available.]
+
+🎯 **Actions by Department**:
+
+👔 Brand Manager: [1 action on positioning vs competitors]
+
+📢 SEO & Marketing: [Keywords/USPs to promote. Format: "Target: [keyword]" "Avoid: [keyword]" "Ad copy: [phrase from guest reviews]". Compare to competitor weaknesses.]
+
+🛏️ Housekeeping: [1 specific action if room/cleanliness relevant]
+
+🛎️ Front Desk: [1 specific action if staff/check-in relevant]
+
+⚙️ Operations: [1 action on process/training]
+
+🍽️ F&B: [1 action if dining relevant]
+
+(Include 3-4 most relevant departments only)
+
+=== COMPETITIVE INTELLIGENCE RULES ===
+When competitor data is available:
+1. COMPARE aspect scores: "Your Dining (89%) beats Taj (78%) - PROMOTE THIS"
+2. FIND GAPS: "Competitor weak on Staff (65%) - steal with 'legendary service' messaging"
+3. IDENTIFY THREATS: "Competitor beats you on Pool (88% vs 72%) - AVOID 'pool' keywords"
+4. SUGGEST ATTACK: For "How do I beat X?" questions, give specific win/lose breakdown
+
+=== R&D MODE (New Hotel Planning) ===
+When asked about opening a new hotel, planning, or R&D:
+1. Analyze COMPETITOR landscape in that area (use nearby competitors data)
+2. Show TRAVELER MIX: What type of guests visit this area? (Business/Couple/Family/Solo)
+3. Show STAY PURPOSE: Why do people come? (Business/Leisure/Wedding/Conference)
+4. Identify GAPS: What are competitors weak at? What's underserved?
+5. Provide BUILD RECOMMENDATIONS: What to focus on based on gaps
+
+Format for R&D queries:
+📊 **Market Analysis**: [Area competitive landscape with scores]
+👥 **Traveler Mix**: [Business X%, Couples Y%, Family Z%]
+🎯 **Purpose**: [Business X%, Leisure Y%]
+⚠️ **Competitor Weaknesses**: [What they're bad at = your opportunity]
+🛠️ **Build Recommendations**: [What to invest in based on gaps]
+
+=== PERSONA-BASED INSIGHTS ===
+When asked about specific traveler types or genders:
+- Use traveler_type data (Solo, Couple, Family, Business, Group)
+- Use stay_purpose data (Business, Leisure, Wedding, Conference)
+- Use gender data if relevant
+- Show what each segment complains about
+- Example: "Business travelers complain about 'slow wifi' and 'noisy rooms'"
+
+=== SEO & MARKETING SPECIAL INSTRUCTIONS ===
+- Use actual guest phrases for ad copy: "guests say 'best biryani' → use in Google Ads"
+- Location keywords: "near [landmark]", "best [aspect] in [area]"
+- Competitor weakness = your keyword opportunity
+- Format USPs as: "✓ PROMOTE: [strength]" and "✗ AVOID: [weakness]"
+
+=== FAQ GENERATION RULES ===
+When asked for FAQs (for website, SEO, GEO-based, etc.):
+- Generate 5-8 actual Q&A pairs based on the SELECTED hotel's data
+- Use the hotel's City, Address, and Location data from context
+- Pull actual guest phrases from positive/negative reviews
+- Focus on what guests ACTUALLY ask about (based on review mentions)
+- Categories to cover: Location/Transport, Dining, Amenities, Value, Room quality
+- Make answers specific using real satisfaction scores and guest quotes
+
+Format each FAQ as:
+**Q: [Natural question a guest would ask]?**
+A: [Answer using actual data - scores, guest phrases, location details]
+
+Generate FAQs dynamically based on:
+1. Hotel's strongest aspects (highest satisfaction %) → Promote in answers
+2. Hotel's location/city from context → Use for "near X" questions  
+3. Top positive phrases → Quote in answers
+4. Common concerns from negative phrases → Address proactively
+
+=== RULES ===
+1. Answer ONLY from data provided. Never hallucinate.
+2. If query is in Hindi/Tamil/Telugu, respond in SAME language but keep emoji headers.
+3. Always cite specific % scores.
+4. Be direct - max 300 words for FAQs, 350 for R&D.
+5. For non-FAQ queries, ALWAYS end with "🎯 Actions by Department".
+6. Make every action specific and executable TODAY.
+"""
+                sql = f"""SELECT ml_generate_text_llm_result FROM ML.GENERATE_TEXT(
+                    MODEL `{PROJECT}.{DATASET}.gemini_flash_model`,
+                    (SELECT @prompt AS prompt),
+                    STRUCT(0.3 AS temperature, 900 AS max_output_tokens, TRUE AS flatten_json_output))"""
+                try:
+                    job_cfg = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("prompt","STRING",prompt)])
+                    result = client.query(sql, job_config=job_cfg).to_dataframe()
+                    return result["ml_generate_text_llm_result"].iloc[0].strip()
+                except Exception as e:
+                    return f"Error: {e}"
+            
+            # Chat state
+            if "analyst_history" not in st.session_state:
+                st.session_state.analyst_history = []
+            
+            for msg in st.session_state.analyst_history:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+            
+            # ─────────────────────────────────────────
+            # BASIC HOTEL STATS (Always show)
+            # ─────────────────────────────────────────
+            if not st.session_state.analyst_history:
+                # Calculate quick stats
+                def calc_hotel_stats(data_df):
+                    stats = []
+                    for hotel in data_df["hotel_name"].unique()[:4]:
+                        hd = data_df[data_df["hotel_name"] == hotel]
+                        pos = hd[hd["sentiment_type"].str.lower()=="positive"]["mention_count"].sum()
+                        neg = hd[hd["sentiment_type"].str.lower()=="negative"]["mention_count"].sum()
+                        overall = round(pos/(pos+neg)*100, 0) if (pos+neg) else 0
+                        
+                        # Best and worst aspects
+                        aspect_scores = []
+                        for asp in hd["aspect"].unique():
+                            ad = hd[hd["aspect"]==asp]
+                            ap = ad[ad["sentiment_type"].str.lower()=="positive"]["mention_count"].sum()
+                            an = ad[ad["sentiment_type"].str.lower()=="negative"]["mention_count"].sum()
+                            ascore = round(ap/(ap+an)*100, 0) if (ap+an) else 0
+                            aspect_scores.append({"aspect": asp, "score": ascore})
+                        
+                        aspect_scores.sort(key=lambda x: x["score"], reverse=True)
+                        best = aspect_scores[0] if aspect_scores else {"aspect": "N/A", "score": 0}
+                        worst = aspect_scores[-1] if aspect_scores else {"aspect": "N/A", "score": 0}
+                        
+                        stats.append({
+                            "hotel": hotel[:30],
+                            "overall": overall,
+                            "best": best,
+                            "worst": worst,
+                            "reviews": int(pos + neg)
+                        })
+                    return stats
+                
+                hotel_stats = calc_hotel_stats(df)
+                
+                # Display stats cards
+                st.markdown("##### 📊 Quick Overview")
+                cols = st.columns(min(len(hotel_stats), 2))
+                for i, stat in enumerate(hotel_stats[:2]):
+                    with cols[i]:
+                        st.markdown(f"""
+                        <div style='background: linear-gradient(135deg, #0d9488 0%, #115e59 100%); 
+                                    padding: 15px; border-radius: 10px; color: white; margin-bottom: 10px;'>
+                            <div style='font-weight: bold; font-size: 14px;'>{stat['hotel']}</div>
+                            <div style='font-size: 28px; font-weight: bold;'>{stat['overall']:.0f}%</div>
+                            <div style='font-size: 11px; opacity: 0.9;'>Overall Satisfaction</div>
+                            <div style='margin-top: 8px; font-size: 12px;'>
+                                ✅ Best: {stat['best']['aspect']} ({stat['best']['score']:.0f}%)<br>
+                                ⚠️ Watch: {stat['worst']['aspect']} ({stat['worst']['score']:.0f}%)
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                st.markdown("---")
+            
+            # ─────────────────────────────────────────
+            # SUGGESTED QUESTIONS (Always show)
+            # ─────────────────────────────────────────
+            st.markdown("**💡 Ask SmaartAnalyst:**")
+            
+            # Different questions based on conversation state
+            if not st.session_state.analyst_history:
+                # Initial questions
+                if len(hotels_list) == 1:
+                    sugs = [
+                        "What's good & bad in the last 3 months?",
+                        "Who are my guests? (traveler type & purpose)",
+                        "How do I beat nearby competitors?",
+                        "Give me SEO keywords to target"
+                    ]
+                else:
+                    sugs = [
+                        "What's the traveler mix in this area?",
+                        f"Compare {hotels_list[0][:15]} vs {hotels_list[1][:15]}",
+                        "What are Business travelers complaining about?",
+                        "Best USPs for marketing"
+                    ]
+            else:
+                # Follow-up questions based on last response
+                last_msg = st.session_state.analyst_history[-1]["content"] if st.session_state.analyst_history else ""
+                sugs = [
+                    "What do Business travelers want?",
+                    "GEO-based FAQs for my website",
+                    "Give me ad copy for Google Ads",
+                    "If I open a new hotel here, what should I focus on?"
+                ]
+            
+            # Always show suggestion buttons
+            c1, c2 = st.columns(2)
+            for i, s in enumerate(sugs):
+                col = c1 if i % 2 == 0 else c2
+                if col.button(s, key=f"sug_{i}_{len(st.session_state.analyst_history)}", use_container_width=True):
+                    st.session_state.analyst_history.append({"role": "user", "content": s})
+                    with st.chat_message("user"):
+                        st.write(s)
+                    with st.chat_message("assistant"):
+                        with st.spinner("Analyzing..."):
+                            resp = run_analyst(s, df, st.session_state.analyst_history)
+                            st.write(resp)
+                    st.session_state.analyst_history.append({"role": "assistant", "content": resp})
+                    st.rerun()
+            
+            # ─────────────────────────────────────────
+            # FREE TEXT INPUT
+            # ─────────────────────────────────────────
+            aq = st.chat_input("Or type your own question...", key="analyst_q")
+            if aq:
+                st.session_state.analyst_history.append({"role": "user", "content": aq})
+                with st.chat_message("user"):
+                    st.write(aq)
+                with st.chat_message("assistant"):
+                    with st.spinner("Analyzing..."):
+                        resp = run_analyst(aq, df, st.session_state.analyst_history)
+                        st.write(resp)
+                st.session_state.analyst_history.append({"role": "assistant", "content": resp})
+                st.rerun()
+            
+            # Clear button
+            if st.session_state.analyst_history:
+                if st.button("🗑️ Start Fresh", key="clr_a"):
+                    st.session_state.analyst_history = []
+                    st.rerun()
+
+# ═══════════════════════════════════════════
+# TAB 2: CHAT (Gemini Data Analytics Agent)
+# ═══════════════════════════════════════════
+with tab_chat:
+    st.markdown("### 💬 Hotel Data Intelligence")
+    st.caption("Ask in any language • Auto-corrects spelling • Powered by Gemini Data Analytics Agent")
+    
+    with st.expander("🌐 Languages & Corrections", expanded=False):
+        c1, c2 = st.columns(2)
+        c1.markdown("**Languages:** English, हिंदी, தமிழ், తెలుగు, ಕನ್ನಡ...")
+        c1.markdown("**Cities:** Bangalore→Bengaluru, Bombay→Mumbai")
+        c2.markdown("**Hotels:** Marriot→Marriott, Oberoy→Oberoi")
+        c2.markdown("**Aspects:** Food→Dining, Clean→Cleanliness")
+    
+    if "chat_msgs" not in st.session_state:
+        st.session_state.chat_msgs = []
+    if "chat_id" not in st.session_state:
+        st.session_state.chat_id = f"smaart-{uuid.uuid4().hex[:6]}"
+    
+    for msg in st.session_state.chat_msgs:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    def preprocess(q):
+        aliases = {"bangalore":"Bengaluru","blr":"Bengaluru","bombay":"Mumbai","madras":"Chennai",
+                   "marriot":"Marriott","oberoy":"Oberoi","food":"Dining","clean":"Cleanliness"}
+        for a, c in aliases.items():
+            q = re.sub(r'\b'+re.escape(a)+r'\b', c, q, flags=re.IGNORECASE)
+        return q
+    
+    ui = st.chat_input("Ask about hotels... (e.g., 'बेंगलुरु में सबसे अच्छा होटल?')")
+    
+    if ui:
+        processed = preprocess(ui)
+        enhanced = f"""User Query: {processed}
+
+=== RESPONSE INSTRUCTIONS ===
+You are SmaartAnalyst, a hotel decision intelligence assistant.
+
+1. LANGUAGE: If query is in Hindi/Tamil/Telugu/Kannada, respond in SAME language but keep emoji headers.
+2. Use corrected hotel/city names from preprocessing.
+3. Provide data-driven insights with specific satisfaction % scores.
+
+=== RESPONSE FORMAT ===
+Always structure responses as:
+
+📊 **Insight**: [Key finding with specific scores. Compare to competitors if available.]
+
+🎯 **Actions by Department**:
+👔 Brand Manager: [positioning action]
+📢 SEO & Marketing: [keywords to target, USPs to promote, competitor weaknesses to exploit. Use guest phrases for ad copy.]
+🛏️ Housekeeping: [if room/cleanliness relevant]
+🛎️ Front Desk: [if staff/service relevant]
+⚙️ Operations: [process improvement]
+🍽️ F&B: [if dining relevant]
+
+(Include 3-4 most relevant departments)
+
+=== SEO & MARKETING RULES ===
+- Extract actual guest phrases for ad copy: "guests say 'best biryani' → use in Google Ads"
+- Location keywords: "best [aspect] in [city]", "near [landmark]"
+- Format: "✓ PROMOTE: [strength]" and "✗ AVOID: [weakness]"
+- Compare aspect scores vs competitors when available
+
+=== COMPETITIVE INTELLIGENCE ===
+- COMPARE: "Your Dining (89%) beats Taj (78%)"
+- FIND GAPS: "Competitor weak on Staff → steal with 'legendary service'"
+- THREATS: "Competitor beats you on Pool → avoid 'pool' keywords"
+
+Original Query: {ui}"""
+        
+        st.session_state.chat_msgs.append({"role":"user","content":ui})
+        with st.chat_message("user"): st.markdown(ui)
+        
+        with st.chat_message("assistant"):
+            ph = st.empty()
+            try:
+                from google.cloud import geminidataanalytics_v1alpha as gda
+                cc = get_chat_client()
+                if cc:
+                    parent = f"projects/{PROJECT}/locations/{LOCATION}"
+                    agent = f"{parent}/dataAgents/{AGENT_ID}"
+                    conv = cc.conversation_path(PROJECT, LOCATION, st.session_state.chat_id)
+                    
+                    try: cc.get_conversation(name=conv)
+                    except: cc.create_conversation(request=gda.CreateConversationRequest(
+                        parent=parent, conversation_id=st.session_state.chat_id, conversation=gda.Conversation(agents=[agent])))
+                    
+                    stream = cc.chat(request={"parent":parent,
+                        "conversation_reference":{"conversation":conv,"data_agent_context":{"data_agent":agent}},
+                        "messages":[{"user_message":{"text":enhanced}}]})
+                    
+                    resp = ""
+                    for chunk in stream:
+                        if hasattr(chunk,'system_message') and hasattr(chunk.system_message,'text'):
+                            for p in chunk.system_message.text.parts: st.caption(f"💭 {p}")
+                        if hasattr(chunk,'agent_message') and hasattr(chunk.agent_message,'text'):
+                            for p in chunk.agent_message.text.parts:
+                                resp += str(p)
+                                ph.markdown(resp+"▌")
+                        elif hasattr(chunk,'message') and hasattr(chunk.message,'content'):
+                            for p in chunk.message.content.parts:
+                                resp += p.text if hasattr(p,'text') else str(p)
+                                ph.markdown(resp+"▌")
+                    
+                    if resp:
+                        ph.markdown(resp)
+                        st.session_state.chat_msgs.append({"role":"assistant","content":resp})
+                    else:
+                        ph.markdown("Done.")
+                else:
+                    ph.markdown("⚠️ Chat unavailable.")
+            except Exception as e:
+                st.error(f"Error: {e}")
+    
+    if st.session_state.chat_msgs:
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.chat_msgs = []
+            st.session_state.chat_id = f"smaart-{uuid.uuid4().hex[:6]}"
+            st.rerun()
+
+st.divider()
+st.caption("🏨 Smaartbrand Intelligence • Multi-language • BigQuery + Gemini")
+st.markdown("""
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-top: 1px solid #eee; margin-top: 20px;">
+    <img src="https://raw.githubusercontent.com/giridharid/streamlit_smaartbrand_unified/main/acquink_logo.png" alt="Acquink" style="height: 24px;">
+    <span style="color: #888; font-size: 12px;">Copyright © Acquink | All rights reserved 2026/span>
+</div>
+""", unsafe_allow_html=True)
