@@ -118,13 +118,13 @@ def get_metadata():
 
 # NO CACHE - for debugging
 def fetch_data_debug(hotel_names: list):
-    """Fetch with debug output - no cache"""
+    """Fetch with debug output - no cache, using parameterized query"""
     if client is None:
         return pd.DataFrame(), "No client"
     if not hotel_names:
         return pd.DataFrame(), "No hotel names provided"
     
-    names_sql = "', '".join([n.replace("'", "''") for n in hotel_names])
+    # Use parameterized query to avoid SQL injection and special character issues
     query = f"""
     SELECT pl.Name AS hotel_name, pd.Brand, pl.Star_Category, pl.City,
            s.aspect_id, s.treemap_name AS phrase, s.sentiment_type, 
@@ -137,11 +137,16 @@ def fetch_data_debug(hotel_names: list):
     JOIN `{PROJECT}.{DATASET}.product_user_review_sentiment` s ON e.id = s.user_review_id
     JOIN `{PROJECT}.{DATASET}.product_list` pl ON e.product_id = pl.product_id
     JOIN `{PROJECT}.{DATASET}.product_description` pd ON pl.product_id = pd.product_id
-    WHERE pl.Name IN ('{names_sql}')
+    WHERE pl.Name IN UNNEST(@hotel_names)
     GROUP BY pl.Name, pd.Brand, pl.Star_Category, pl.City, s.aspect_id, s.treemap_name, s.sentiment_type, e.Review_date, e.inferred_gender, e.traveler_type, e.stay_purpose
     """
     try:
-        df = client.query(query).to_dataframe()
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter("hotel_names", "STRING", list(hotel_names))
+            ]
+        )
+        df = client.query(query, job_config=job_config).to_dataframe()
         if df.empty:
             return df, f"Query returned 0 rows for {len(hotel_names)} hotels"
         df["aspect"] = df["aspect_id"].map(ASPECT_MAP).fillna("Other")
