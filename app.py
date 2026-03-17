@@ -12,7 +12,7 @@ import re
 # ─────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────
-st.set_page_config(page_title="Smaartbrand Intelligence Pipeline", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Smaartbrand Intelligence", page_icon="🏨", layout="wide")
 
 # ─────────────────────────────────────────
 # STYLES
@@ -21,56 +21,23 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-.main-header {
-    text-align: center; padding: 20px;
-    background: linear-gradient(135deg, #1e3a5f 0%, #0d9488 100%);
-    border-radius: 12px; margin-bottom: 20px;
-}
-.main-header h1 { color: white; margin: 0; font-size: 1.8rem; }
-.main-header p { color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 0.85rem; }
-
-.compare-card {
-    background: linear-gradient(135deg, #0d9488 0%, #115e59 100%);
-    padding: 20px; border-radius: 12px; color: white; text-align: center;
-    margin: 8px 0;
-}
+.main-header { text-align: center; padding: 24px; background: linear-gradient(135deg, #1e3a5f 0%, #0d9488 100%); border-radius: 12px; margin-bottom: 20px; }
+.main-header h1 { color: white; margin: 0; font-size: 1.9rem; }
+.main-header p { color: rgba(255,255,255,0.85); margin: 8px 0 0 0; font-size: 0.9rem; }
+.compare-card { background: linear-gradient(135deg, #0d9488 0%, #115e59 100%); padding: 20px; border-radius: 12px; color: white; text-align: center; margin: 8px 0; }
 .compare-card h3 { margin: 0 0 8px 0; font-size: 1rem; opacity: 0.9; }
 .compare-card .metric { font-size: 2.2rem; font-weight: 700; }
-
-.insight-card {
-    background: #f8fafc; border-left: 4px solid #0d9488;
-    padding: 16px; margin: 12px 0; border-radius: 0 8px 8px 0;
-}
+.insight-card { background: #f8fafc; border-left: 4px solid #0d9488; padding: 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
 .insight-title { font-weight: 600; color: #1e3a5f; margin-bottom: 8px; }
-
-.winner-badge {
-    background: #10b981; color: white; padding: 2px 10px;
-    border-radius: 12px; font-size: 11px; font-weight: 600;
-}
-
-.article-preview {
-    background: white; border: 1px solid #e5e7eb;
-    border-radius: 12px; padding: 24px; margin: 16px 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    white-space: pre-wrap; line-height: 1.6;
-}
-
-.linkedin-badge {
-    background: #0077b5; color: white;
-    padding: 4px 12px; border-radius: 20px;
-    font-size: 12px; font-weight: 500;
-}
-
-.vs-text {
-    font-size: 1.5rem; font-weight: 700; color: #f59e0b;
-    text-align: center; padding: 10px;
-}
+.winner-badge { background: #10b981; color: white; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.article-preview { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin: 16px 0; white-space: pre-wrap; line-height: 1.6; }
+.linkedin-badge { background: #0077b5; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+.vs-text { font-size: 1.5rem; font-weight: 700; color: #f59e0b; text-align: center; padding: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-# CREDENTIALS (EXACT COPY FROM REFERENCE APP)
+# CREDENTIALS (exact copy from working app)
 # ─────────────────────────────────────────
 def get_credentials():
     gcp_creds = os.environ.get("GCP_CREDENTIALS_JSON", "")
@@ -124,7 +91,7 @@ HOOK_LIBRARY = {
     "city_leisure": "🏖️ Leisure travelers love {city1}. But {city2} is catching up fast.",
     "star_overall": "⭐ 3-star vs 4-star vs 5-star: Which gives the best bang for your buck?",
     "star_value": "⭐ 5-star price, 3-star experience? We compared {total:,} reviews.",
-    "star_service": "🛎️ Do more stars mean better service? Not always. Here's what the data shows.",
+    "star_service": "🛎️ Do more stars mean better service? Not always.",
 }
 
 def get_color_for_score(score):
@@ -132,7 +99,7 @@ def get_color_for_score(score):
     return TEAL_SCALE[idx]
 
 # ─────────────────────────────────────────
-# DATA QUERIES (EXACT COPY FROM REFERENCE APP)
+# DATA QUERIES (exact copy from working app)
 # ─────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def get_metadata():
@@ -149,10 +116,14 @@ def get_metadata():
     except:
         return pd.DataFrame()
 
-@st.cache_data(ttl=600)
-def fetch_data(hotel_names: tuple):
-    if client is None or not hotel_names:
-        return pd.DataFrame()
+# NO CACHE - for debugging
+def fetch_data_debug(hotel_names: list):
+    """Fetch with debug output - no cache"""
+    if client is None:
+        return pd.DataFrame(), "No client"
+    if not hotel_names:
+        return pd.DataFrame(), "No hotel names provided"
+    
     names_sql = "', '".join([n.replace("'", "''") for n in hotel_names])
     query = f"""
     SELECT pl.Name AS hotel_name, pd.Brand, pl.Star_Category, pl.City,
@@ -171,195 +142,141 @@ def fetch_data(hotel_names: tuple):
     """
     try:
         df = client.query(query).to_dataframe()
+        if df.empty:
+            return df, f"Query returned 0 rows for {len(hotel_names)} hotels"
         df["aspect"] = df["aspect_id"].map(ASPECT_MAP).fillna("Other")
         df["mention_count"] = pd.to_numeric(df["mention_count"], errors="coerce").fillna(0).astype(int)
-        if "Review_date" in df.columns:
-            df["Review_date"] = pd.to_datetime(df["Review_date"], errors="coerce")
-        return df
-    except:
-        return pd.DataFrame()
+        return df, f"Success: {len(df)} rows"
+    except Exception as e:
+        return pd.DataFrame(), f"Query error: {str(e)}"
 
 # ─────────────────────────────────────────
 # PIPELINE FUNCTIONS
 # ─────────────────────────────────────────
-def filter_unknown_personas(df):
+def filter_unknown(df):
+    original_len = len(df)
     for col in ['gender', 'traveler_type', 'stay_purpose']:
         if col in df.columns:
             df = df[~df[col].astype(str).str.lower().isin(['unknown', 'nan', 'none', ''])]
     return df
 
-def run_query_agent(compare_by, selected_items, hotel_names, meta):
+def run_query_agent(compare_by, selected_items, hotel_names):
     if not hotel_names:
-        return {"success": False, "error": "No hotels selected"}
+        return {"success": False, "error": "No hotels selected", "debug": "hotel_names list is empty"}
     
-    df = fetch_data(tuple(hotel_names))
+    df, debug_msg = fetch_data_debug(hotel_names)
+    
     if df.empty:
-        return {"success": False, "error": "No data found"}
+        return {"success": False, "error": "No data found", "debug": debug_msg, "hotels_tried": hotel_names[:10]}
     
-    df = filter_unknown_personas(df)
-    total_mentions = df['mention_count'].sum()
+    df = filter_unknown(df)
+    if df.empty:
+        return {"success": False, "error": "No data after filtering unknowns", "debug": "All rows filtered out"}
     
-    if compare_by == "Brand":
-        group_col = "Brand"
-    elif compare_by == "City":
-        group_col = "City"
-    elif compare_by == "Star Category":
-        group_col = "Star_Category"
-    else:
-        group_col = "hotel_name"
+    group_col = {"Brand": "Brand", "City": "City", "Star Category": "Star_Category"}.get(compare_by, "hotel_name")
     
-    # Satisfaction per group per aspect
-    satisfaction_data = []
-    for group in df[group_col].unique():
-        group_df = df[df[group_col] == group]
-        group_total = group_df['mention_count'].sum()
-        
-        for aspect in df['aspect'].unique():
-            aspect_df = group_df[group_df['aspect'] == aspect]
-            pos = aspect_df[aspect_df['sentiment_type'].str.lower() == 'positive']['mention_count'].sum()
-            neg = aspect_df[aspect_df['sentiment_type'].str.lower() == 'negative']['mention_count'].sum()
-            total = pos + neg
-            sat_pct = round(pos / total * 100, 1) if total > 0 else 0
-            satisfaction_data.append({
-                'compare_group': str(group), 'aspect': aspect, 'satisfaction_pct': sat_pct,
-                'positive_count': pos, 'negative_count': neg
-            })
+    sat_data = []
+    for grp in df[group_col].unique():
+        gdf = df[df[group_col] == grp]
+        for asp in df['aspect'].unique():
+            adf = gdf[gdf['aspect'] == asp]
+            pos = adf[adf['sentiment_type'].str.lower() == 'positive']['mention_count'].sum()
+            neg = adf[adf['sentiment_type'].str.lower() == 'negative']['mention_count'].sum()
+            sat_data.append({'compare_group': str(grp), 'aspect': asp,
+                             'satisfaction_pct': round(pos/(pos+neg)*100, 1) if pos+neg > 0 else 0})
+    sat_df = pd.DataFrame(sat_data)
     
-    satisfaction_df = pd.DataFrame(satisfaction_data)
+    overall = {}
+    for grp in df[group_col].unique():
+        gdf = df[df[group_col] == grp]
+        pos = gdf[gdf['sentiment_type'].str.lower() == 'positive']['mention_count'].sum()
+        neg = gdf[gdf['sentiment_type'].str.lower() == 'negative']['mention_count'].sum()
+        overall[str(grp)] = round(pos/(pos+neg)*100, 1) if pos+neg > 0 else 0
     
-    # Overall satisfaction per group
-    overall_satisfaction = {}
-    for group in df[group_col].unique():
-        group_df = df[df[group_col] == group]
-        pos = group_df[group_df['sentiment_type'].str.lower() == 'positive']['mention_count'].sum()
-        neg = group_df[group_df['sentiment_type'].str.lower() == 'negative']['mention_count'].sum()
-        overall_satisfaction[str(group)] = round(pos / (pos + neg) * 100, 1) if (pos + neg) > 0 else 0
+    winners = {}
+    for asp in sat_df['aspect'].unique():
+        adf = sat_df[sat_df['aspect'] == asp]
+        if len(adf) > 1:
+            w, l = adf.loc[adf['satisfaction_pct'].idxmax()], adf.loc[adf['satisfaction_pct'].idxmin()]
+            winners[asp] = {'winner': w['compare_group'], 'winner_score': w['satisfaction_pct'],
+                            'loser': l['compare_group'], 'loser_score': l['satisfaction_pct'],
+                            'gap': round(w['satisfaction_pct'] - l['satisfaction_pct'], 1)}
     
-    # Aspect winners
-    aspect_winners = {}
-    for aspect in satisfaction_df['aspect'].unique():
-        aspect_data = satisfaction_df[satisfaction_df['aspect'] == aspect]
-        if len(aspect_data) > 1:
-            winner = aspect_data.loc[aspect_data['satisfaction_pct'].idxmax()]
-            loser = aspect_data.loc[aspect_data['satisfaction_pct'].idxmin()]
-            aspect_winners[aspect] = {
-                'winner': winner['compare_group'], 'winner_score': winner['satisfaction_pct'],
-                'loser': loser['compare_group'], 'loser_score': loser['satisfaction_pct'],
-                'gap': round(winner['satisfaction_pct'] - loser['satisfaction_pct'], 1)
-            }
-    
-    return {
-        "success": True, "compare_by": compare_by,
-        "groups": [str(g) for g in df[group_col].unique()],
-        "satisfaction_df": satisfaction_df, "overall_satisfaction": overall_satisfaction,
-        "aspect_winners": aspect_winners, "total_mentions": total_mentions,
-        "hotel_count": df['hotel_name'].nunique()
-    }
+    return {"success": True, "compare_by": compare_by, "groups": [str(g) for g in df[group_col].unique()],
+            "satisfaction_df": sat_df, "overall_satisfaction": overall, "aspect_winners": winners,
+            "total_mentions": int(df['mention_count'].sum()), "hotel_count": df['hotel_name'].nunique(),
+            "debug": debug_msg}
 
-def run_insight_extractor(query_result):
-    if not query_result.get('success'):
+def run_insight_extractor(qr):
+    if not qr.get('success'):
         return {"success": False, "insights": []}
-    
     insights = []
-    overall_sat = query_result['overall_satisfaction']
-    aspect_winners = query_result['aspect_winners']
-    
-    sorted_groups = sorted(overall_sat.items(), key=lambda x: x[1], reverse=True)
-    if sorted_groups:
-        leader, laggard = sorted_groups[0], sorted_groups[-1]
-        insights.append({
-            "type": "overall_winner",
-            "title": f"🏆 Overall Winner: {leader[0]}",
-            "description": f"{leader[0]} leads with {leader[1]}% vs {laggard[0]} at {laggard[1]}% (Gap: {leader[1]-laggard[1]:.1f}%)",
-            "icon": "🏆", "gap": leader[1] - laggard[1]
-        })
-    
-    for aspect, data in sorted(aspect_winners.items(), key=lambda x: x[1]['gap'], reverse=True)[:3]:
-        if data['gap'] > 5:
-            insights.append({
-                "type": "aspect_gap",
-                "title": f"{ASPECT_ICONS.get(aspect, '📊')} {aspect}: {data['winner']} dominates",
-                "description": f"{data['winner']} scores {data['winner_score']}% vs {data['loser']} at {data['loser_score']}%",
-                "icon": ASPECT_ICONS.get(aspect, "📊"), "aspect": aspect,
-                "winner": data['winner'], "gap": data['gap']
-            })
-    
-    return {"success": True, "insights": insights, "query_result": query_result}
+    sg = sorted(qr['overall_satisfaction'].items(), key=lambda x: x[1], reverse=True)
+    if sg:
+        insights.append({"type": "overall_winner", "title": f"🏆 Winner: {sg[0][0]}",
+                         "description": f"{sg[0][0]} leads with {sg[0][1]}% vs {sg[-1][0]} at {sg[-1][1]}%",
+                         "icon": "🏆", "gap": sg[0][1] - sg[-1][1]})
+    for asp, d in sorted(qr['aspect_winners'].items(), key=lambda x: x[1]['gap'], reverse=True)[:3]:
+        if d['gap'] > 5:
+            insights.append({"type": "aspect_gap", "title": f"{ASPECT_ICONS.get(asp,'📊')} {asp}: {d['winner']} leads",
+                             "description": f"{d['winner']} {d['winner_score']}% vs {d['loser']} {d['loser_score']}%",
+                             "icon": ASPECT_ICONS.get(asp, "📊"), "aspect": asp, "winner": d['winner'], "gap": d['gap']})
+    return {"success": True, "insights": insights, "query_result": qr}
 
-def run_chart_generator(insight_result):
-    if not insight_result.get('success'):
+def run_chart_generator(ir):
+    if not ir.get('success'):
         return {"success": False, "charts": []}
-    
+    qr = ir['query_result']
+    sat_df, overall, compare_by = qr['satisfaction_df'], qr['overall_satisfaction'], qr['compare_by']
     charts = []
-    qr = insight_result['query_result']
-    satisfaction_df = qr['satisfaction_df']
-    overall_sat = qr['overall_satisfaction']
-    compare_by = qr['compare_by']
     
-    # Bar chart
-    sorted_groups = sorted(overall_sat.items(), key=lambda x: x[1], reverse=True)
-    fig1 = go.Figure(go.Bar(
-        x=[g[1] for g in sorted_groups], y=[str(g[0]) for g in sorted_groups],
-        orientation='h', marker_color=['#10b981' if i==0 else '#0d9488' for i in range(len(sorted_groups))],
-        text=[f"{g[1]}%" for g in sorted_groups], textposition='outside'
-    ))
-    fig1.update_layout(title=f"Overall Satisfaction: {compare_by}", height=300,
-                       margin=dict(l=150,r=60,t=60,b=40), xaxis=dict(range=[0,105]),
-                       paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-    charts.append({"title": "Overall Satisfaction", "figure": fig1})
+    sg = sorted(overall.items(), key=lambda x: x[1], reverse=True)
+    fig1 = go.Figure(go.Bar(x=[g[1] for g in sg], y=[str(g[0]) for g in sg], orientation='h',
+                            marker_color=['#10b981' if i==0 else '#0d9488' for i in range(len(sg))],
+                            text=[f"{g[1]}%" for g in sg], textposition='outside'))
+    fig1.update_layout(title=f"Overall: {compare_by}", height=300, margin=dict(l=150,r=60,t=60,b=40),
+                       xaxis=dict(range=[0,105]), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    charts.append({"title": "Overall", "figure": fig1})
     
-    # Heatmap
-    if not satisfaction_df.empty:
-        pivot = satisfaction_df.pivot(index='aspect', columns='compare_group', values='satisfaction_pct').fillna(0)
-        fig2 = go.Figure(go.Heatmap(
-            z=pivot.values, x=pivot.columns.tolist(),
-            y=[f"{ASPECT_ICONS.get(a,'•')} {a}" for a in pivot.index],
-            colorscale=[[0,'#fecaca'],[0.5,'#fef3c7'],[1,'#a7f3d0']],
-            text=[[f"{v:.0f}%" for v in row] for row in pivot.values],
-            texttemplate="%{text}", textfont={"size":11}
-        ))
-        fig2.update_layout(title="Aspect Breakdown", height=400, margin=dict(l=150,r=20,t=60,b=60),
-                           paper_bgcolor='rgba(0,0,0,0)')
-        charts.append({"title": "Aspect Heatmap", "figure": fig2})
+    if not sat_df.empty:
+        pivot = sat_df.pivot(index='aspect', columns='compare_group', values='satisfaction_pct').fillna(0)
+        fig2 = go.Figure(go.Heatmap(z=pivot.values, x=pivot.columns.tolist(),
+                                     y=[f"{ASPECT_ICONS.get(a,'•')} {a}" for a in pivot.index],
+                                     colorscale=[[0,'#fecaca'],[0.5,'#fef3c7'],[1,'#a7f3d0']],
+                                     text=[[f"{v:.0f}%" for v in row] for row in pivot.values],
+                                     texttemplate="%{text}", textfont={"size":11}))
+        fig2.update_layout(title="Aspect Breakdown", height=400, margin=dict(l=150,r=20,t=60,b=60), paper_bgcolor='rgba(0,0,0,0)')
+        charts.append({"title": "Heatmap", "figure": fig2})
     
-    # Radar
     fig3 = go.Figure()
     colors = ['#0d9488', '#f59e0b', '#8b5cf6', '#ef4444']
-    for i, group in enumerate(qr['groups'][:4]):
-        gd = satisfaction_df[satisfaction_df['compare_group'] == str(group)]
+    for i, grp in enumerate(qr['groups'][:4]):
+        gd = sat_df[sat_df['compare_group'] == str(grp)]
         if not gd.empty:
             aspects, scores = gd['aspect'].tolist(), gd['satisfaction_pct'].tolist()
-            fig3.add_trace(go.Scatterpolar(
-                r=scores + [scores[0]], theta=aspects + [aspects[0]],
-                fill='toself', line=dict(color=colors[i%4], width=2), name=str(group)
-            ))
+            fig3.add_trace(go.Scatterpolar(r=scores+[scores[0]], theta=aspects+[aspects[0]],
+                                           fill='toself', line=dict(color=colors[i%4], width=2), name=str(grp)))
     fig3.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0,100])),
-                       showlegend=True, title="Radar Comparison", height=400, paper_bgcolor='rgba(0,0,0,0)')
+                       showlegend=True, title="Radar", height=400, paper_bgcolor='rgba(0,0,0,0)')
     charts.append({"title": "Radar", "figure": fig3})
     
-    return {"success": True, "charts": charts, "insight_result": insight_result}
+    return {"success": True, "charts": charts, "insight_result": ir}
 
-def run_article_writer(chart_result, hook_type, compare_by):
-    if not chart_result.get('success'):
+def run_article_writer(cr, hook_type, compare_by):
+    if not cr.get('success'):
         return {"success": False}
+    qr = cr['insight_result']['query_result']
+    insights = cr['insight_result']['insights']
+    groups, overall, total = qr['groups'], qr['overall_satisfaction'], qr['total_mentions']
     
-    qr = chart_result['insight_result']['query_result']
-    insights = chart_result['insight_result']['insights']
-    groups = qr['groups']
-    overall_sat = qr['overall_satisfaction']
-    total = qr['total_mentions']
-    
-    sorted_groups = sorted(overall_sat.items(), key=lambda x: x[1], reverse=True)
-    leader, laggard = sorted_groups[0][0], sorted_groups[-1][0]
-    leader_score, laggard_score = sorted_groups[0][1], sorted_groups[-1][1]
+    sg = sorted(overall.items(), key=lambda x: x[1], reverse=True)
+    leader, laggard = sg[0][0], sg[-1][0]
+    leader_score, laggard_score = sg[0][1], sg[-1][1]
     
     hook_template = HOOK_LIBRARY.get(hook_type, HOOK_LIBRARY['brand_overall'])
     try:
-        hook = hook_template.format(
-            brand1=groups[0] if groups else "A", brand2=groups[1] if len(groups)>1 else "B",
-            city1=groups[0] if groups else "A", city2=groups[1] if len(groups)>1 else "B",
-            total=total
-        )
+        hook = hook_template.format(brand1=groups[0] if groups else "A", brand2=groups[1] if len(groups)>1 else "B",
+                                    city1=groups[0] if groups else "A", city2=groups[1] if len(groups)>1 else "B", total=total)
     except:
         hook = hook_template
     
@@ -379,36 +296,26 @@ That's {leader_score - laggard_score:.1f}% ahead of {laggard}.
 For {laggard}, focus on {gap_insights[0]['aspect'] if gap_insights else 'basics'}.
 For {leader}, maintain the edge but watch for challengers.
 
-💬 Which {compare_by.lower()} delivers the best experience in your opinion?
+💬 Which {compare_by.lower()} delivers the best experience?
 
 #HospitalityIndustry #HotelManagement #GuestExperience #DataDriven #Smaartbrand"""
     
-    return {
-        "success": True,
-        "article": {"text": article, "word_count": len(article.split()), "char_count": len(article),
-                    "comparison": {"type": compare_by, "groups": groups, "winner": leader, "total_reviews": total}},
-        "charts": chart_result['charts'], "insights": insights
-    }
+    return {"success": True, "article": {"text": article, "word_count": len(article.split()), "char_count": len(article),
+                                          "comparison": {"type": compare_by, "groups": groups, "winner": leader, "total_reviews": total}},
+            "charts": cr['charts'], "insights": insights}
 
 # ─────────────────────────────────────────
-# MAIN APP (structured like reference app)
+# MAIN APP
 # ─────────────────────────────────────────
-st.markdown("""
-<div class="main-header">
-    <h1>🚀 Smaartbrand Intelligence Pipeline</h1>
-    <p>Compare Brands • Cities • Star Categories → LinkedIn-Ready Insights</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="main-header"><h1>🚀 Smaartbrand Intelligence Pipeline</h1><p>Compare Brands • Cities • Stars → LinkedIn-Ready Insights</p></div>', unsafe_allow_html=True)
 
-# Session state
 for key in ['pipeline_stage', 'query_result', 'insight_result', 'chart_result', 'article_result']:
     if key not in st.session_state:
         st.session_state[key] = 0 if key == 'pipeline_stage' else None
 
-# Stage indicator
 stages = ["1. Compare", "2. Insights", "3. Charts", "4. Article"]
-cols = st.columns(4)
-for i, (col, stage) in enumerate(zip(cols, stages)):
+scols = st.columns(4)
+for i, (col, stage) in enumerate(zip(scols, stages)):
     status = "complete" if i < st.session_state.pipeline_stage else ("active" if i == st.session_state.pipeline_stage else "pending")
     icon = "✓" if status == "complete" else str(i+1)
     color = "#10b981" if status == "complete" else ("#0d9488" if status == "active" else "#e5e7eb")
@@ -416,20 +323,24 @@ for i, (col, stage) in enumerate(zip(cols, stages)):
 
 st.divider()
 
-# SIDEBAR (exactly like reference app structure)
+# SIDEBAR
 with st.sidebar:
-    st.markdown("### 🎯 Pipeline Controls")
-    if st.button("🔄 Reset Pipeline", use_container_width=True):
+    st.markdown("### 🎯 Controls")
+    if st.button("🔄 Reset", use_container_width=True):
         for key in ['pipeline_stage', 'query_result', 'insight_result', 'chart_result', 'article_result']:
             st.session_state[key] = 0 if key == 'pipeline_stage' else None
         st.rerun()
     
     st.divider()
-    
     meta = get_metadata()
     selected_hotels = []
+    selected_items = []
+    compare_by = "Brand"
+    hook_type = "brand_overall"
     
     if not meta.empty:
+        st.success(f"✅ Metadata: {len(meta)} hotels")
+        
         compare_by = st.radio("Compare By", ["Brand", "City", "Star Category"], horizontal=True)
         st.divider()
         
@@ -438,14 +349,12 @@ with st.sidebar:
             selected_items = st.multiselect("Select Brands", brands, default=brands[:2] if len(brands)>=2 else brands)
             if selected_items:
                 selected_hotels = meta[meta["Brand"].isin(selected_items)]["hotel_name"].unique().tolist()
-        
         elif compare_by == "City":
             cities = sorted(meta["City"].dropna().unique().tolist())
             selected_items = st.multiselect("Select Cities", cities, default=cities[:2] if len(cities)>=2 else cities)
             if selected_items:
                 selected_hotels = meta[meta["City"].isin(selected_items)]["hotel_name"].unique().tolist()
-        
-        else:  # Star Category
+        else:
             stars = sorted(meta["star_category"].dropna().unique().tolist())
             selected_items = st.multiselect("Select Stars", stars, default=stars[:2] if len(stars)>=2 else stars,
                                             format_func=lambda x: f"{'⭐'*int(x)}")
@@ -454,61 +363,60 @@ with st.sidebar:
         
         if selected_hotels:
             st.success(f"✓ {len(selected_hotels)} hotels")
+            # Debug: Show first few hotel names
+            with st.expander("🔍 Debug: Hotel names"):
+                for h in selected_hotels[:10]:
+                    st.caption(h)
+                if len(selected_hotels) > 10:
+                    st.caption(f"... and {len(selected_hotels) - 10} more")
         
         st.divider()
-        st.markdown("### ✍️ Article Settings")
         hook_map = {"Brand": ["brand_overall","brand_dining","brand_staff","brand_value"],
                     "City": ["city_overall","city_business","city_leisure"],
                     "Star Category": ["star_overall","star_value","star_service"]}
         hook_type = st.selectbox("Hook Style", hook_map.get(compare_by, ["brand_overall"]),
                                  format_func=lambda x: x.replace("_"," ").title())
     else:
-        st.warning("⚠️ No metadata - check BigQuery connection")
-        compare_by = "Brand"
-        selected_items = []
-        hook_type = "brand_overall"
+        st.warning("⚠️ No metadata")
 
-# MAIN CONTENT
+# MAIN
 col1, col2 = st.columns([2.5, 1])
 
 with col1:
-    # STAGE 0
     if st.session_state.pipeline_stage == 0:
         st.markdown("## 1️⃣ Select & Compare")
-        
-        if len(selected_items) >= 2:
+        if len(selected_items) >= 2 and selected_hotels:
             st.markdown("### 🆚 Your Comparison")
             pcols = st.columns(min(len(selected_items), 4))
             for i, (c, item) in enumerate(zip(pcols, selected_items[:4])):
                 c.markdown(f'<div class="compare-card"><h3>{compare_by}</h3><div class="metric">{item}</div></div>', unsafe_allow_html=True)
-            
             st.markdown(f'<div class="vs-text">{" vs ".join([str(s) for s in selected_items[:4]])}</div>', unsafe_allow_html=True)
             st.divider()
             
             if st.button("🚀 Run Comparison", type="primary", use_container_width=True):
                 with st.spinner(f"Analyzing {len(selected_hotels)} hotels..."):
-                    result = run_query_agent(compare_by, selected_items, selected_hotels, meta)
+                    result = run_query_agent(compare_by, selected_items, selected_hotels)
                     if result['success']:
                         st.session_state.query_result = result
                         st.session_state.pipeline_stage = 1
-                        st.success(f"✅ {result['total_mentions']:,} mentions from {result['hotel_count']} hotels")
                         st.rerun()
                     else:
-                        st.error(result.get('error', 'Error'))
+                        st.error(f"❌ {result.get('error', 'Unknown error')}")
+                        # Debug info
+                        st.warning(f"🔍 Debug: {result.get('debug', 'No debug info')}")
+                        if result.get('hotels_tried'):
+                            st.code(f"Hotels tried: {result['hotels_tried']}")
         else:
             st.warning(f"⚠️ Select at least 2 {compare_by.lower()}s from sidebar")
     
-    # STAGE 1
     elif st.session_state.pipeline_stage == 1:
         st.markdown("## 2️⃣ Extract Insights")
         qr = st.session_state.query_result
-        
-        sorted_groups = sorted(qr['overall_satisfaction'].items(), key=lambda x: x[1], reverse=True)
-        gcols = st.columns(min(len(sorted_groups), 4))
-        for i, (c, (group, score)) in enumerate(zip(gcols, sorted_groups[:4])):
+        sg = sorted(qr['overall_satisfaction'].items(), key=lambda x: x[1], reverse=True)
+        gcols = st.columns(min(len(sg), 4))
+        for i, (c, (grp, score)) in enumerate(zip(gcols, sg[:4])):
             badge = "🥇" if i==0 else ("🥈" if i==1 else "")
-            c.markdown(f'<div class="compare-card" style="{"background:linear-gradient(135deg,#10b981,#059669);" if i==0 else ""}"><h3>{badge} {group}</h3><div class="metric">{score}%</div></div>', unsafe_allow_html=True)
-        
+            c.markdown(f'<div class="compare-card" style="{"background:linear-gradient(135deg,#10b981,#059669);" if i==0 else ""}"><h3>{badge} {grp}</h3><div class="metric">{score}%</div></div>', unsafe_allow_html=True)
         st.divider()
         c1, c2 = st.columns(2)
         if c1.button("🔍 Extract Insights", type="primary", use_container_width=True):
@@ -521,16 +429,12 @@ with col1:
             st.session_state.pipeline_stage = 0
             st.rerun()
     
-    # STAGE 2
     elif st.session_state.pipeline_stage == 2:
         st.markdown("## 3️⃣ Generate Charts")
         ir = st.session_state.insight_result
-        
-        st.markdown("### 🎯 Key Findings")
         for ins in ir['insights'][:5]:
             badge = f"<span class='winner-badge'>GAP: {ins.get('gap',0):.0f}%</span>" if ins['type']=='aspect_gap' else ""
             st.markdown(f'<div class="insight-card"><div class="insight-title">{ins.get("icon","")} {ins["title"]} {badge}</div>{ins["description"]}</div>', unsafe_allow_html=True)
-        
         st.divider()
         c1, c2 = st.columns(2)
         if c1.button("📊 Generate Charts", type="primary", use_container_width=True):
@@ -543,16 +447,13 @@ with col1:
             st.session_state.pipeline_stage = 1
             st.rerun()
     
-    # STAGE 3
     elif st.session_state.pipeline_stage == 3:
         st.markdown("## 4️⃣ Write Article")
         cr = st.session_state.chart_result
-        
         tabs = st.tabs([c['title'] for c in cr['charts']])
         for tab, chart in zip(tabs, cr['charts']):
             with tab:
                 st.plotly_chart(chart['figure'], use_container_width=True)
-        
         st.divider()
         c1, c2 = st.columns(2)
         if c1.button("✍️ Generate Article", type="primary", use_container_width=True):
@@ -565,41 +466,30 @@ with col1:
             st.session_state.pipeline_stage = 2
             st.rerun()
     
-    # STAGE 4
     elif st.session_state.pipeline_stage == 4:
         st.markdown("## ✅ Your LinkedIn Article")
         ar = st.session_state.article_result
         article = ar['article']
-        
         st.markdown('<p style="text-align:center;"><span class="linkedin-badge">📱 Ready for LinkedIn</span></p>', unsafe_allow_html=True)
-        comp = article['comparison']
-        st.markdown(f"**{comp['type']}:** {', '.join(comp['groups'][:3])} | **Winner:** {comp['winner']} | **Reviews:** {comp['total_reviews']:,}")
-        
+        st.markdown(f"**{article['comparison']['type']}:** {', '.join(article['comparison']['groups'][:3])} | **Winner:** {article['comparison']['winner']} | **Reviews:** {article['comparison']['total_reviews']:,}")
         st.divider()
         st.markdown(f'<div class="article-preview">{article["text"]}</div>', unsafe_allow_html=True)
-        
-        mc1, mc2, mc3 = st.columns(3)
+        mc1, mc2 = st.columns(2)
         mc1.metric("Characters", f"{article['char_count']:,}")
         mc2.metric("Words", article['word_count'])
-        mc3.metric("Hashtags", "5")
-        
         st.divider()
         edited = st.text_area("Edit Article", article['text'], height=300)
-        
-        bc1, bc2, bc3, bc4 = st.columns(4)
-        if bc1.button("📋 Copy", use_container_width=True):
-            st.code(edited)
-        bc2.download_button("⬇️ Download", edited, f"linkedin_{compare_by.lower()}.txt", use_container_width=True)
-        if bc3.button("🔄 Regenerate", use_container_width=True):
+        bc1, bc2, bc3 = st.columns(3)
+        bc1.download_button("⬇️ Download", edited, f"linkedin_{compare_by.lower()}.txt", use_container_width=True)
+        if bc2.button("🔄 Regenerate", use_container_width=True):
             st.session_state.pipeline_stage = 3
             st.rerun()
-        if bc4.button("🆕 New", type="primary", use_container_width=True):
+        if bc3.button("🆕 New", type="primary", use_container_width=True):
             for k in ['pipeline_stage','query_result','insight_result','chart_result','article_result']:
                 st.session_state[k] = 0 if k=='pipeline_stage' else None
             st.rerun()
-        
         st.divider()
-        st.markdown("### 📊 Charts for Post")
+        st.markdown("### 📊 Charts")
         ccols = st.columns(2)
         for i, ch in enumerate(ar['charts'][:2]):
             with ccols[i]:
@@ -607,18 +497,12 @@ with col1:
 
 with col2:
     st.markdown("### 💡 Tips")
-    tips = {0: "**Compare By:**\n- Brand vs Brand\n- City vs City\n- Star vs Star",
-            1: "**Data:**\n- Unknown excluded ✓\n- Mention % used ✓",
-            2: "**Insights:**\n- Biggest gaps = best content",
-            3: "**Charts:**\n- Heatmap for LinkedIn",
-            4: "**Post:**\n- Best: Tue-Thu 8-10 AM"}
+    tips = {0: "Select Brand/City/Star\nto compare", 1: "Review satisfaction\nscores", 2: "See key gaps", 3: "Pick chart for post", 4: "Copy & post!"}
     st.info(tips.get(st.session_state.pipeline_stage, tips[0]))
-    
     if st.session_state.query_result:
         st.divider()
-        qr = st.session_state.query_result
-        st.metric("Reviews", f"{qr['total_mentions']:,}")
-        st.metric("Hotels", qr['hotel_count'])
+        st.metric("Reviews", f"{st.session_state.query_result['total_mentions']:,}")
+        st.metric("Hotels", st.session_state.query_result['hotel_count'])
 
 st.divider()
 st.markdown('<div style="text-align:center;color:#888;font-size:12px;">🚀 Smaartbrand Pipeline | © Acquink 2026</div>', unsafe_allow_html=True)
